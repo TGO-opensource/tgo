@@ -1303,7 +1303,7 @@ COMETS.forEach(([name,R,e,q,i,O,w,tp])=>{const a=q/(1-e),c={id:'comet'+name.repl
  // the orbit, sampled by true anomaly so the tight turn at perihelion stays smooth; long-period orbits are drawn out to 60 AU
  const rmax=Math.min(60,a*(1+e)),nm=rmax>=a*(1+e)-1e-9?Math.PI:Math.acos(Math.min(1,(a*(1-e*e)/rmax-1)/e)),pts=[];
  for(let k=0;k<=400;k++){cometXY(c,-nm+2*nm*k/400,tmp);pts.push(tmp.x,tmp.y,tmp.z)}const og=new THREE.BufferGeometry();og.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
- c.orbit=new THREE.Line(og,new THREE.LineBasicMaterial({color:0x7fa8c8,transparent:true,opacity:.45}));c.orbit.frustumCulled=false;scene.add(c.orbit);
+ c.orbit=new THREE.Line(og,new THREE.LineBasicMaterial({color:0x7fa8c8,transparent:true,opacity:.22}));c.orbit.frustumCulled=false;scene.add(c.orbit);
  const el=document.createElement('button');el.className='lb comet';el.innerHTML='<i></i><span>'+name+'</span><em></em>';el.addEventListener('click',()=>pick(c));labelsEl.appendChild(el);c.lb=el;ALL.push(c)});
 const CM=ALL.filter(b=>b.kind==='comet');
 function cometPos(){const jd=sim/864e5+2440587.5;for(const c of CM){let M=c.n*(jd-c.tp)*D2R;M=((M%TAU)+TAU*1.5)%TAU-Math.PI;
@@ -1320,6 +1320,36 @@ function updateComets(){const on=opt.small;for(const c of CM){c.loc.subVectors(c
     tV.copy(tA);if(j)tV.addScaledVector(c.vdir,-.9*s).normalize();tV.cross(tS).normalize().multiplyScalar(W*(.25+s)*.5);
     p.setXYZ(k*2,tP.x+tV.x,tP.y+tV.y,tP.z+tV.z);p.setXYZ(k*2+1,tP.x-tV.x,tP.y-tV.y,tP.z-tV.z);const a=(1-s)*(1-s)*act*(j?.5:.65);t.setW(k*2,a);t.setW(k*2+1,a)}
    p.needsUpdate=t.needsUpdate=true})}}
+/* asteroids, Jupiter's Trojans, Centaurs and the Kuiper belt: about 50,000 JPL orbits drawn as one point cloud. Each point solves Kepler's
+   equation on the GPU from its elements and the time since the shared epoch, so the whole belt moves with the clock at no CPU cost. */
+const SB={pts:null,t:{value:0},sunLoc:{value:new THREE.Vector3()},epoch:0,n:0};
+async function loadSB(){try{const r=await fetch('data/asteroids.bin.gz');if(!r.ok)return;
+ const buf=await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),dv=new DataView(buf);if(dv.getUint32(0,true)!==0x414f4754)return; // 'TGOA'
+ const n=dv.getUint32(4,true),blk=k=>new Float32Array(buf,16+k*n*4,n),H=new Uint8Array(buf,16+24*n,n),C=new Uint8Array(buf,16+25*n,n),g=new THREE.BufferGeometry();
+ const el1=new Float32Array(n*3),el2=new Float32Array(n*3),[A,E,I,O,W,M]=[0,1,2,3,4,5].map(blk);for(let k=0;k<n;k++){el1[k*3]=A[k];el1[k*3+1]=E[k];el1[k*3+2]=I[k];el2[k*3]=O[k];el2[k*3+1]=W[k];el2[k*3+2]=M[k]}
+ g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(n*3),3));g.setAttribute('el1',new THREE.BufferAttribute(el1,3));g.setAttribute('el2',new THREE.BufferAttribute(el2,3));
+ g.setAttribute('cls',new THREE.BufferAttribute(new Float32Array(C),1));g.setAttribute('hmag',new THREE.BufferAttribute(new Float32Array(H).map(h=>h/10),1));
+ const mat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{t:SB.t,sunLoc:SB.sunLoc,au:{value:AU},px:{value:Math.min(devicePixelRatio||1,2)}},
+  vertexShader:`#include <common>
+#include <logdepthbuf_pars_vertex>
+uniform float t,au,px;uniform vec3 sunLoc;attribute vec3 el1,el2;attribute float cls,hmag;varying vec3 vC;
+void main(){float a=el1.x,e=el1.y,n=.01720209895/pow(a,1.5),M=mod(el2.z+n*t,6.2831853),E=e>.8?3.1415927:M;
+ for(int k=0;k<6;k++)E-=(E-e*sin(E)-M)/(1.-e*cos(E));
+ float xp=a*(cos(E)-e),yp=a*sqrt(1.-e*e)*sin(E),cO=cos(el2.x),sO=sin(el2.x),co=cos(el2.y),so=sin(el2.y),ci=cos(el1.z),si=sin(el1.z);
+ float x=(co*cO-so*sO*ci)*xp+(-so*cO-co*sO*ci)*yp,y=(co*sO+so*cO*ci)*xp+(-so*sO+co*cO*ci)*yp,z=so*si*xp+co*si*yp;
+ vec3 p=vec3(x,z,-y)*au+sunLoc;
+ // tint by family: main belt grey-tan, Trojans ruddy, Kuiper belt and Centaurs blue-grey, near-Earth orange
+ vC=cls<1.5?vec3(.78,.72,.62):cls<2.5?vec3(.9,.62,.45):cls<3.5?vec3(.55,.66,.88):cls<4.5?vec3(.7,.62,.85):cls<5.5?vec3(1.,.55,.35):vec3(.6);
+ vC*=.55*clamp(1.3-(hmag-8.)*.06,.35,1.);gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);gl_PointSize=px*(cls>2.5&&cls<4.5?1.8:1.5);
+#include <logdepthbuf_vertex>
+}`,fragmentShader:`#include <common>
+#include <logdepthbuf_pars_fragment>
+varying vec3 vC;void main(){
+#include <logdepthbuf_fragment>
+ float r=length(gl_PointCoord-.5);if(r>.5)discard;gl_FragColor=vec4(vC*(1.-r*1.4),1.);}`});
+ SB.epoch=dv.getFloat64(8,true);SB.n=n;SB.pts=new THREE.Points(g,mat);SB.pts.frustumCulled=false;scene.add(SB.pts)}catch(e){}}
+setTimeout(()=>(window.requestIdleCallback||setTimeout)(loadSB),5000);
+function updateSB(){if(!SB.pts)return;SB.pts.visible=opt.small&&look.view!=='wire';SB.t.value=(sim/864e5+2440587.5)-SB.epoch;SB.sunLoc.value.copy(B[0].loc)}
 function updateCometLabels(W,H,far){for(const c of CM){let show=(opt.small&&opt.labels&&c.act>0&&!far)||c===focus||(ship.on&&ship.target===c);
  if(show){v3.copy(c.obj.position).project(camera);if(v3.z>1)show=false;else c.lb.style.transform='translate('+((v3.x+1)/2*W).toFixed(1)+'px,'+((1-v3.y)/2*H).toFixed(1)+'px)'}
  c.lb.classList.toggle('off',!show)}}
@@ -1703,7 +1733,7 @@ document.querySelectorAll('.sw [data-accent]').forEach(b=>b.addEventListener('cl
 
 
 // ?debug exposes the internals for checking things from the browser console
-if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,XC,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t},
+if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,XC,SB,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t},
  // render n frames now, for checks while the tab is in the background (where requestAnimationFrame pauses)
  step:(n=1,ms=16)=>{const raf=window.requestAnimationFrame;window.requestAnimationFrame=()=>0;try{for(let i=0;i<n;i++){last=performance.now()-ms;frame(performance.now())}}finally{window.requestAnimationFrame=raf}}};
 
@@ -1728,7 +1758,7 @@ function frame(now){
   if(s>=1)land()}
  else{origin.copy(focus.pos);zoomStep(dt);controls.rotateSpeed=.6*Math.min(1,Math.max(.003,(camera.position.length()/(focus.R*KM)-1)*1.2));controls.update()}
  for(const b of B)b.loc.subVectors(b.pos,origin);
- for(const s of XS){s.loc.subVectors(s.pos,origin);s.obj.position.copy(s.loc)}updateProbes();updateComets();
+ for(const s of XS){s.loc.subVectors(s.pos,origin);s.obj.position.copy(s.loc)}updateProbes();updateComets();updateSB();
  if(pred.visible&&ship.ref)pred.position.copy(ship.ref.pos).sub(origin);
  const cur=fly?fly.to:focus,cd=camera.position.length();
  const fon=opt.fabric&&!ship.on?1:0;fk+=(fon-fk)*Math.min(1,dt*6);if(Math.abs(fk-fon)<.002)fk=fon;
