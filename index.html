@@ -9,9 +9,9 @@
 <link rel="preload" href="data/stars.bin" as="fetch" crossorigin>
 <link rel="preload" href="data/stars.json" as="fetch" crossorigin>
 <style>
-:root{--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:rgba(0,6,2,.92);--font:"JetBrains Mono",ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:rgba(0,6,2,.92)}}
-:root[data-theme="dark"]{--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:rgba(0,6,2,.92)}
+:root{--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:#000602;--font:"JetBrains Mono",ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:#000602}}
+:root[data-theme="dark"]{--bg:#000;--g:#3dff8a;--g2:#25b862;--g3:#14572f;--g4:#0a2415;--txt:#c8ffda;--panel:#000602}
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--txt);font:400 12px/1.5 var(--font)}
@@ -82,13 +82,27 @@ select:focus{border-color:var(--g)}
 select:disabled{opacity:.5}
 .btn:disabled{opacity:.35;cursor:default}
 .btn:disabled:hover{border-color:var(--g3)}
-#hud{position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:6;width:min(390px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--g3);padding:8px 10px 9px;font-variant-numeric:tabular-nums}
-#hud .top{display:flex;justify-content:space-between;gap:8px;color:var(--g);font-weight:600}
-#hud .top span:last-child{color:#7fc79a;font-weight:400}
-#hud .spd{font-size:20px;color:#e4ffec;margin:2px 0 3px;white-space:nowrap}
-#hud .spd small{font-size:12px;color:#7fc79a;margin-left:10px}
-#thr{height:5px;background:var(--g4);margin:0 0 7px}
-#thr{position:relative}#thr i{display:block;height:100%;width:0;background:var(--g)}#thr b{position:absolute;top:-3px;width:2px;height:11px;left:0;background:#fff;display:none}
+/* flight bar: a slim strip along the bottom edge so the ship stays in view */
+#hud{position:fixed;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:6;background:var(--panel);border:1px solid var(--g3);font-variant-numeric:tabular-nums}
+#hud [hidden]{display:none!important}
+#hud .bar{display:flex;align-items:center;flex-wrap:wrap;gap:4px 18px;padding:4px 6px 4px 10px;min-height:34px}
+#hud .who{color:var(--g);font-weight:600;white-space:nowrap}#hud .who span{color:#7fc79a;font-weight:400;margin-left:8px}
+#hud .spd{font-size:16px;color:#e4ffec;white-space:nowrap}
+#hud .spd small{font-size:11px;color:#7fc79a;margin-left:8px}
+#hud dl.main{display:flex;flex-wrap:wrap;gap:2px 16px;flex:1;min-width:0}#hud dl.main div{display:flex;gap:6px;white-space:nowrap}#hud dl.main dd{text-align:left}
+#hud .ctl{display:flex;gap:4px;margin-left:auto}#hud .ctl .btn{padding:2px 8px}
+#h-extra,#h-helpbox{border-top:1px solid var(--g4);padding:6px 10px 8px}#h-extra dl{max-width:780px}
+#hud.min{left:50%;right:auto;transform:translateX(-50%)}#hud.min .who,#hud.min .main,#hud.min #h-more,#hud.min #h-help,#hud.min #h-extra,#hud.min #h-helpbox{display:none!important}
+#thr{position:absolute;left:0;right:0;top:-1px;height:2px;background:var(--g4)}#thr i{display:block;height:100%;width:0;background:var(--g)}#thr b{position:absolute;top:-3px;width:2px;height:8px;left:0;background:#fff;display:none}
+/* while flying the side panels shrink to tabs and sit clear of the flight bar */
+.panel.min{width:auto;max-width:240px}
+body.flying #p-info,body.flying #p-time{bottom:calc(var(--hudh,44px) + 16px + env(safe-area-inset-bottom,0px))}
+#p-ship{left:max(12px,env(safe-area-inset-left));top:calc(54px + env(safe-area-inset-top,0px))}
+#p-ship .bd{max-height:calc(100vh - 160px - var(--hudh,44px) - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:auto;scrollbar-width:thin;scrollbar-color:var(--g3) transparent}
+#p-ship[hidden],label.ck[hidden]{display:none}
+body.flying #zoom{right:max(12px,env(safe-area-inset-right));top:calc(54px + env(safe-area-inset-top,0px))}
+body.flying #p-layers:not(.min)~#zoom{right:calc(max(12px,env(safe-area-inset-right)) + 248px);top:calc(12px + env(safe-area-inset-top,0px))}
+body.flying #p-fly:not(.min)~#p-ship{display:none}
 .cr .btn{padding:3px 6px}
 #mk-pro,#mk-ret{position:fixed;left:0;top:0;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;z-index:3;display:none}
 #mk-pro svg,#mk-ret svg{display:block;width:100%;height:100%}
@@ -102,21 +116,22 @@ body[data-view="wire"] .lb em{color:var(--g2)}
 #lg-ticks{position:relative;height:15px;font-size:10px;color:#7fc79a}
 #lg-ticks span{position:absolute;top:1px;transform:translateX(-50%)}
 #legend[hidden]{display:none}#lg-here[hidden]{display:none}
-:root[data-theme="light"]{--g:#0b7a3b;--g2:#2a8f55;--g3:#9cc9ad;--g4:#dcefe3;--txt:#0d2b1a;--panel:rgba(246,251,248,.95);color-scheme:light}
+:root[data-theme="light"]{--g:#0b7a3b;--g2:#2a8f55;--g3:#9cc9ad;--g4:#dcefe3;--txt:#0d2b1a;--panel:#f6fbf8;color-scheme:light}
 :root[data-theme="light"] dd,:root[data-theme="light"] #date,:root[data-theme="light"] #hud .spd{color:#0d2b1a}
-:root[data-theme="light"] dt,:root[data-theme="light"] .note,:root[data-theme="light"] #hud .keys,:root[data-theme="light"] #hud .spd small,:root[data-theme="light"] #hud .top span:last-child,:root[data-theme="light"] #lg-ticks{color:#4f7a62}
+:root[data-theme="light"] dt,:root[data-theme="light"] .note,:root[data-theme="light"] #hud .keys,:root[data-theme="light"] #hud .spd small,:root[data-theme="light"] #hud .who span,:root[data-theme="light"] #lg-ticks{color:#4f7a62}
 :root[data-theme="light"] #q,:root[data-theme="light"] select,:root[data-theme="light"] label.ck input{background:#fff}
 :root[data-theme="light"] label.ck input:checked{box-shadow:inset 0 0 0 2px #fff}
 :root[data-theme="light"] .btn[aria-pressed="true"],:root[data-theme="light"] #list button[aria-current="true"]{color:#fff}
 :root[data-theme="light"] #list button.moon{color:#3d6b52}
-#hud dl{grid-template-columns:auto 1fr auto 1fr;gap:1px 10px}#hud dl dd.w{grid-column:span 3}
-#h-msg{color:var(--g);min-height:1.5em;margin-top:5px}
+#h-extra dl{grid-template-columns:auto 1fr auto 1fr;gap:1px 10px}#h-extra dd{text-align:left}#h-extra dl dd.w{grid-column:span 3}
+#h-msg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--hudh,44px) + 16px + env(safe-area-inset-bottom,0px));z-index:6;width:max-content;max-width:min(560px,calc(100vw - 24px));padding:6px 12px;background:var(--panel);border:1px solid var(--g);color:var(--g);pointer-events:none}
+#h-msg:empty{display:none}
 #hud .keys{color:#7fc79a;font-size:10.5px;margin:2px 0 0}
 #pad{position:fixed;left:max(12px,env(safe-area-inset-left));top:50%;transform:translateY(-50%);display:none;grid-template-columns:repeat(3,42px);grid-auto-rows:42px;gap:4px;z-index:6}
 #pad button{background:var(--panel);border:1px solid var(--g3);color:var(--g);padding:0;font-size:15px;touch-action:none;user-select:none;-webkit-user-select:none}
 #pad button:active{background:var(--g);color:#000}
 @media (pointer:coarse){body.flying #pad{display:grid}#hud .keys{display:none}}
-@media (max-width:960px){#hud{bottom:calc(56px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:640px){#hud .spd small,#hud .who span{display:none}}
 @media (max-width:640px){body.flying #zoom{top:50%;bottom:auto;transform:translateY(-50%)}}
 </style>
 </head>
@@ -134,9 +149,16 @@ body[data-view="wire"] .lb em{color:var(--g2)}
   <hr>
   <div class="rng"><span>Ship</span><select id="shipSel" aria-label="Choose a ship"></select></div>
   <div class="row" style="margin-top:4px"><button class="btn" id="launch">Launch</button></div>
+ </div>
+</section>
+
+<section class="panel" id="p-ship" hidden>
+ <header><h2 id="ps-name">Ship</h2><button class="mn" aria-expanded="true" aria-label="Minimize panel">–</button></header>
+ <div class="bd">
   <div id="ap" hidden>
-   <div class="row" role="group" aria-label="Flight model" style="margin-top:6px"><button class="btn" data-fm="newton" aria-pressed="true">Newtonian</button><button class="btn" data-fm="cruise" aria-pressed="false">Cruise</button></div>
+   <div class="row" role="group" aria-label="Flight model"><button class="btn" data-fm="newton" aria-pressed="true">Newtonian</button><button class="btn" data-fm="cruise" aria-pressed="false">Cruise</button></div>
    <div id="nw-opts"><div class="rng" style="margin-top:4px"><span>Thrust</span><input type="range" id="thrust" min="-4" max="2.5" step="0.05" value="0" aria-label="Engine acceleration, logarithmic"><span id="thrv" style="min-width:64px;text-align:right">1 g</span></div>
+    <label class="ck"><input type="checkbox" id="l-realthr">Realistic thrust</label>
     <p class="note" id="nw-rated" style="margin:0 0 4px"></p>
     <div class="row"><button class="btn" id="b-match">Match (X)</button><button class="btn" id="b-orbit">Orbit (O)</button><button class="btn" id="b-land">Land (L)</button></div></div>
    <div class="rng" style="margin-top:6px"><span>Top speed</span><input type="range" id="mult" min="1" max="10" step="1" value="1" aria-label="Ship top speed in multiples of light speed"><span id="multv" style="min-width:28px;text-align:right">1c</span></div>
@@ -144,7 +166,8 @@ body[data-view="wire"] .lb em{color:var(--g2)}
    <div id="cr-opts"><p class="note" style="margin:8px 0 4px">Cruise speed (keys 0 to 5)</p>
    <div class="row cr"><button class="btn" data-cr="0" aria-pressed="false">Stop</button><button class="btn" data-cr="1" aria-pressed="false">10 km/s</button><button class="btn" data-cr="2" aria-pressed="false">1,000 km/s</button><button class="btn" data-cr="3" aria-pressed="false">0.1c</button><button class="btn" data-cr="4" aria-pressed="false">1c</button><button class="btn" data-cr="5" aria-pressed="false">5c</button></div></div>
    <label class="ck" style="margin-top:6px"><input type="checkbox" id="l-rel" checked>Relativistic view</label>
-   <p class="note">Pick any body above to make it your target.</p>
+   <p class="note">Pick a body in Fly me to, or double-click one, to make it your target.</p>
+   <div class="row" style="margin-top:6px"><button class="btn" id="leave">Leave ship</button></div>
   </div>
  </div>
 </section>
@@ -194,14 +217,20 @@ body[data-view="wire"] .lb em{color:var(--g2)}
 </section>
 
 <div id="hud" hidden>
- <div class="top"><span id="h-ship">Ship</span><span id="h-mode">Manual</span></div>
- <div class="spd" id="h-spd">0 m/s</div>
  <div id="thr" aria-hidden="true"><i></i><b></b></div>
- <dl><dt>Target</dt><dd id="h-tgt">—</dd><dt>Distance</dt><dd id="h-dist">—</dd><dt>Light time</dt><dd id="h-lt">—</dd><dt>ETA</dt><dd id="h-eta">—</dd><dt>Signal to Earth</dt><dd class="w" id="h-sig">—</dd><dt id="h-setl">Cruise set</dt><dd class="w" id="h-set">—</dd><dt>Gravity</dt><dd class="w" id="h-g">—</dd><dt class="nwrow">Altitude</dt><dd class="w nwrow" id="h-alt">—</dd><dt class="nwrow">Orbit</dt><dd class="w nwrow" id="h-orb">—</dd><dt class="nwrow">Time</dt><dd class="w nwrow" id="h-warp">—</dd></dl>
- <div id="h-msg" aria-live="polite"></div>
- <p class="note" id="h-fact"></p>
- <p class="keys" id="h-keys"></p>
+ <div class="bar">
+  <span class="who"><b id="h-ship">Ship</b><span id="h-mode">Manual</span></span>
+  <span class="spd" id="h-spd">0 m/s</span>
+  <dl class="main"><div><dt>Target</dt><dd id="h-tgt">—</dd></div><div><dt>Distance</dt><dd id="h-dist">—</dd></div><div><dt>ETA</dt><dd id="h-eta">—</dd></div><div class="nwrow"><dt>Altitude</dt><dd id="h-alt">—</dd></div></dl>
+  <span class="ctl"><button class="btn" id="h-more" aria-expanded="false" aria-controls="h-extra">More</button><button class="btn" id="h-help" aria-expanded="false" aria-controls="h-helpbox" aria-label="Keyboard controls">?</button><button class="mn" id="h-min" aria-expanded="true" aria-label="Collapse flight bar">–</button></span>
+ </div>
+ <div id="h-extra" hidden>
+  <dl><dt>Light time</dt><dd id="h-lt">—</dd><dt>Signal to Earth</dt><dd id="h-sig">—</dd><dt id="h-setl">Cruise set</dt><dd class="w" id="h-set">—</dd><dt>Gravity</dt><dd class="w" id="h-g">—</dd><dt class="nwrow">Orbit</dt><dd class="w nwrow" id="h-orb">—</dd><dt class="nwrow">Time</dt><dd class="w nwrow" id="h-warp">—</dd></dl>
+  <p class="note" id="h-fact"></p>
+ </div>
+ <div id="h-helpbox" hidden><p class="keys" id="h-keys"></p></div>
 </div>
+<div id="h-msg" aria-live="polite"></div>
 <div id="pad" aria-label="Flight controls">
  <button data-k="KeyQ" aria-label="Roll left">↺</button><button data-k="ArrowUp" aria-label="Nose up">▲</button><button data-k="KeyE" aria-label="Roll right">↻</button>
  <button data-k="ArrowLeft" aria-label="Turn left">◀</button><button data-k="KeyX" aria-label="Stop">■</button><button data-k="ArrowRight" aria-label="Turn right">▶</button>
@@ -647,7 +676,9 @@ $('#q').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const v=e.targe
 
 /* panels */
 document.querySelectorAll('.panel').forEach(p=>{const bt=p.querySelector('.mn');const t=()=>{const m=p.classList.toggle('min');bt.textContent=m?'+':'–';bt.setAttribute('aria-expanded',String(!m));bt.setAttribute('aria-label',m?'Expand panel':'Minimize panel')};
- p.querySelector('header').addEventListener('click',t)});
+ p.querySelector('header').addEventListener('click',()=>{t();
+  // while flying, the ship panel and the info panel share the left edge, so opening one folds the other
+  const o={'p-ship':'#p-info','p-info':'#p-ship'}[p.id];if(o&&document.body.classList.contains('flying')&&!p.classList.contains('min')&&!$(o).classList.contains('min'))$(o+' header').click()})});
 if(innerWidth<640)['#p-fly','#p-layers','#p-info'].forEach(s=>$(s+' header').click());
 
 /* state */
@@ -681,8 +712,14 @@ function stopTour(){tour=null;$('#tour').setAttribute('aria-pressed','false');$(
 $('#tour').addEventListener('click',()=>{if(tour){stopTour();return}tour={i:-1,next:0};$('#tour').setAttribute('aria-pressed','true');$('#tour').textContent='Stop tour'});
 $('#overview').addEventListener('click',()=>{stopTour();go(byId.sun,6*AU)});
 addEventListener('keydown',e=>{if(e.key==='Escape'){stopTour();if(ship.on&&ship.ap)apOff('Autopilot off')}});
-function zoomBy(f){if(ship.on&&ship.cam==='cockpit')return;if(ship.on&&ship.cam==='chase'){ship.chase=Math.min(ship.def.size*80,Math.max(ship.def.size*1.3,ship.chase*f));return}if(fly)return;let d;if(ship.on)d=camera.position.length()*f;else{const R=focus.R*KM;d=R+(camera.position.length()-R)*f}
- d=Math.min(controls.maxDistance,Math.max(controls.minDistance,d));camera.position.setLength(d);controls.update()}
+// zoom works on height above the focused body in log space: steady at any range, faster the farther out, and it eases rather than jumps
+const zm={t:null};
+function zoomBy(f){if(ship.on&&ship.cam==='cockpit')return;if(ship.on&&ship.cam==='chase'){ship.chaseT=Math.min(ship.def.size*150,Math.max(ship.def.size*1.5,ship.chaseT*f));return}if(fly)return;
+ if(ship.on){camera.position.setLength(Math.min(controls.maxDistance,Math.max(controls.minDistance,camera.position.length()*f)));controls.update();return}
+ const R=focus.R*KM,lo=Math.log(controls.minDistance-R),hi=Math.log(controls.maxDistance-R);if(zm.t===null)zm.t=Math.log(Math.max(camera.position.length()-R,controls.minDistance-R));
+ zm.t=Math.min(hi,Math.max(lo,zm.t+Math.log(f)))}
+function zoomStep(dt){if(zm.t===null||fly||ship.on){zm.t=null;return}const R=focus.R*KM,cur=Math.log(Math.max(camera.position.length()-R,1e-12)),n=cur+(zm.t-cur)*Math.min(1,dt*9);
+ camera.position.setLength(R+Math.exp(n));if(Math.abs(zm.t-n)<1e-3)zm.t=null}
 $('#zin').addEventListener('click',()=>zoomBy(.6));$('#zout').addEventListener('click',()=>zoomBy(1/.6));
 
 /* fabric */
@@ -999,8 +1036,7 @@ function starAt(cx,cy){const W=innerWidth,H=innerHeight;let best=-1,bd=14*14;
 const clk={x:0,y:0,t:0};
 canvas.addEventListener('pointerdown',e=>{clk.x=e.clientX;clk.y=e.clientY;clk.t=performance.now()});
 canvas.addEventListener('pointerup',e=>{if(performance.now()-clk.t>450||Math.hypot(e.clientX-clk.x,e.clientY-clk.y)>5)return;
- const f=fly?fly.to:focus;v3.copy(f.obj.position).project(camera);if(v3.z<1){const W=innerWidth,H=innerHeight,r=f.R*KM/(f.obj.position.distanceTo(camera.position)*Math.tan(camera.fov*D2R/2))*H/2;
-  if(Math.hypot((v3.x+1)/2*W-e.clientX,(1-v3.y)/2*H-e.clientY)<r+4)return} // clicked the world in front, not the sky
+ if(bodyAt(e.clientX,e.clientY))return; // clicked a world (double-click flies there), not the sky
  const i=starAt(e.clientX,e.clientY);if(i<0)return;pick(getStar(i))});
 
 // real spacecraft, modelled from their published distances and directions (ecliptic J2000). Positions are approximate, good to a few degrees.
@@ -1037,8 +1073,8 @@ B.forEach(b=>{b.li.parentNode.dataset.n=b.name.toLowerCase();b.li.parentNode.dat
 function filterList(v){list.querySelectorAll('li').forEach(li=>{li.style.display=li.classList.contains('hd')?(v?'none':''):(v?li.dataset.n.includes(v):li.dataset.d==='1')?'':'none'})}
 
 /* flight */
-const ship={on:false,def:null,pos:new V3(),q:new THREE.Quaternion(),v:0,thr:0,ap:null,mult:1,anchor:null,off:new V3(),target:null,cam:'chase',chase:1,av:new V3(),msg:'',msgT:0,mv:new V3(0,0,-1),stop:false,fov:45,mode:'newton',vel:new V3(),vr:new V3(),vb:null,acc:9.80665,land:null,hold:null,ref:null,tf:0,warpCapS:1e12,capP:1e12,warpLim:false,drag:0};
-const keys={},mouse={x:0,y:0,down:false,sx:0,sy:0};
+const ship={on:false,def:null,pos:new V3(),q:new THREE.Quaternion(),v:0,thr:0,ap:null,mult:1,anchor:null,off:new V3(),target:null,cam:'chase',chase:1,chaseT:1,cy:0,cyT:0,cp:0,cpT:0,av:new V3(),avT:new V3(),rated:9.80665,restore:null,msg:'',msgT:0,mv:new V3(0,0,-1),stop:false,fov:45,mode:'newton',vel:new V3(),vr:new V3(),vb:null,acc:9.80665,land:null,hold:null,ref:null,tf:0,warpCapS:1e12,capP:1e12,warpLim:false,drag:0};
+const keys={},mouse={x:0,y:0,down:false,sx:0,sy:0,lx:0,ly:0},qo=new THREE.Quaternion(),eo=new THREE.Euler();
 const K=(...c)=>c.some(k=>keys[k]);
 const arriveR=b=>Math.max(b.R*KM*(b.kind==='star'?4:3),ship.def?ship.def.size*4:0);
 function flash(m,ms){ship.msg=m;ship.msgT=performance.now()+(ms||5000);$('#h-msg').textContent=m}
@@ -1050,7 +1086,7 @@ function fmtC(k){const c=k/CKM;return c===0?'0 c':c>=.01?c.toFixed(2)+' c':(c*10
 /* travel: fly there smoothly, or jump instantly */
 let travel='fly';
 function jumpFX(fn){const el=$('#jumpfx');el.classList.remove('go');void el.offsetWidth;el.classList.add('go');setTimeout(fn,matchMedia('(prefers-reduced-motion: reduce)').matches?60:230)}
-function go(b,d1,dir){if(travel==='jump'){jumpFX(()=>{fly=null;focus=b;d1=d1||viewDist(b);const dv=dir?dir.clone():camera.position.clone().normalize();camera.position.copy(dv).multiplyScalar(d1);
+function go(b,d1,dir){zm.t=null;if(travel==='jump'){jumpFX(()=>{fly=null;focus=b;d1=d1||viewDist(b);const dv=dir?dir.clone():camera.position.clone().normalize();camera.position.copy(dv).multiplyScalar(d1);
   camera.lookAt(0,0,0);controls.minDistance=b.R*KM*1.0006;controls.enabled=true;origin.copy(b.pos);controls.update();setFocusUI(b);if(tour)tour.next=performance.now()+3500})}
  else flyTo(b,d1,dir)}
 function pick(b){if(ship.on)setTarget(b);else{stopTour();curSite=null;$('#i-site').textContent=b.note||'';go(b)}}
@@ -1080,19 +1116,25 @@ function launch(){const def=SHIPS[+$('#shipSel').value];makeShip(def);ship.def=d
  const toB=out.clone().negate(),side=new V3().crossVectors(toB,new V3(0,1,0));if(side.lengthSq()<1e-6)side.set(1,0,0);side.normalize();
  const hd=toB.multiplyScalar(Math.cos(35*D2R)).addScaledVector(side,Math.sin(35*D2R)).normalize();
  m4.lookAt(ZERO,hd,new V3(0,1,0));ship.q.setFromRotationMatrix(m4);cq.copy(ship.q);
- Object.assign(ship,{v:0,thr:0,ap:null,anchor:base,cam:'chase',chase:def.size*3.6,target:base,stop:false});ship.av.set(0,0,0);ship.off.subVectors(ship.pos,base.pos);
+ Object.assign(ship,{v:0,thr:0,ap:null,anchor:base,cam:'chase',chase:def.size*3.6,chaseT:def.size*3.6,cy:0,cyT:0,cp:0,cpT:0,target:base,stop:false});ship.av.set(0,0,0);ship.avT.set(0,0,0);ship.off.subVectors(ship.pos,base.pos);
  SHIPS.forEach(s=>{if(s.obj)s.obj.visible=s===def});ship.on=true;controls.enabled=false;
  const sp=$('#speed');sp.value=5;sp.dispatchEvent(new Event('input'));
- (innerWidth<960?['#p-info','#p-time']:['#p-info']).forEach(s=>{if(!$(s).classList.contains('min'))$(s+' header').click()});
+ // fold the side panels into tabs while flying, and remember which to reopen on the way out
+ ship.restore=['#p-fly','#p-layers','#p-time','#p-info'].filter(s=>!$(s).classList.contains('min'));ship.restore.forEach(s=>$(s+' header').click());
  if(document.activeElement)document.activeElement.blur();
  $('#h-fact').textContent=def.fact;ship.vel.copy(base.vel||ZERO);ship.land=null;ship.hold=null;ship.drag=0;ship.ref=base;
  if(ship.mode==='newton'){ship.anchor=null;ship.hold={b:base,off:ship.pos.clone().sub(base.pos)}}
- const rated=RATED[def.id]||9.8;setThrust(Math.log10(rated/9.80665));$('#nw-rated').textContent='Rated '+gee(rated)+(rated<.5?'. Real spacecraft engines are gentle; raise the thrust or the time warp to get anywhere.':'.');
+ // every ship gets at least 1 g so it moves; the real engine rating is one tick away
+ ship.rated=RATED[def.id]||9.80665;$('#l-realthr').checked=false;$('#l-realthr').parentElement.hidden=ship.rated>=9.80665;realThrust();
  shipUI(true);fmUI();setTarget(base);
- flash(ship.mode==='newton'?def.name+' holding near '+base.name+'. W thrusts forward, X matches velocity, O enters orbit, P flies to the target. Arrow keys rotate.':def.name+' launched near '+base.name+'. Press 4 to cruise at light speed, or hold W to throttle up. Arrow keys steer.',9000)}
-function exitShip(){ship.on=false;ship.ap=null;ship.land=null;ship.hold=null;pred.visible=false;updateMarkers();if(ship.cam==='cockpit')ship.cam='chase';for(const k in keys)keys[k]=false;mouse.x=mouse.y=0;if(ship.def.obj)ship.def.obj.visible=false;camera.up.set(0,1,0);camera.fov=45;camera.updateProjectionMatrix();shipUI(false);
+ flash(ship.mode==='newton'?def.name+' is station-keeping near '+base.name+'. Press W (or any thrust key) to release it and fly. P flies to the target.':def.name+' launched near '+base.name+'. Press 4 to cruise at light speed, or hold W to throttle up. Arrow keys steer.',9000)}
+function realThrust(){const r=$('#l-realthr').checked,a=r?ship.rated:Math.max(ship.rated,9.80665);setThrust(Math.log10(a/9.80665));
+ $('#nw-rated').textContent=ship.rated>=9.80665?'Rated '+gee(ship.rated)+'.':r?'Real engine, '+gee(ship.rated)+': raise the time warp to get anywhere.':'Real engine: '+gee(ship.rated)+'. Boosted to 1 g so you can fly.'}
+function exitShip(){ship.on=false;ship.ap=null;ship.land=null;ship.hold=null;pred.visible=false;updateMarkers();
+ (ship.restore||[]).forEach(s=>{if($(s).classList.contains('min'))$(s+' header').click()});ship.restore=null;if(ship.cam==='cockpit')ship.cam='chase';for(const k in keys)keys[k]=false;mouse.x=mouse.y=0;if(ship.def.obj)ship.def.obj.visible=false;camera.up.set(0,1,0);camera.fov=45;camera.updateProjectionMatrix();shipUI(false);
  let best=B[0],bd=Infinity;for(const b of ALL){if(b.kind==='probe'&&!b.on)continue;const d=ship.pos.distanceTo(b.pos)-b.R*KM;if(d<bd){bd=d;best=b}}focus=best;fly=null;flyTo(best)}
-function shipUI(on){$('#launch').textContent=on?'Leave ship':'Launch';$('#ap').hidden=!on;$('#hud').hidden=!on;document.body.classList.toggle('flying',on);
+function shipUI(on){$('#launch').textContent=on?'Leave ship':'Launch';$('#ap').hidden=!on;$('#p-ship').hidden=!on;$('#hud').hidden=!on;document.body.classList.toggle('flying',on);
+ if(on){$('#ps-name').textContent=ship.def.name;if($('#p-ship').classList.contains('min'))$('#p-ship header').click();hudH()}else $('#h-msg').textContent='';
  $('#shipSel').disabled=on;$('#tour').disabled=on;$('#overview').disabled=on;apUI()}
 function toggleCam(){ship.cam=ship.cam==='chase'?'cockpit':ship.cam==='cockpit'?'look':'chase';if(ship.cam==='cockpit'){controls.enabled=false;flash('Cockpit view');return}
  if(ship.cam==='look'){camera.up.set(0,1,0);controls.enabled=true;controls.rotateSpeed=.6;controls.target.set(0,0,0);controls.minDistance=ship.def.size*1.2;controls.update();flash('Free look: drag to orbit the ship, press C to return')}
@@ -1122,7 +1164,7 @@ function newtonStep(dt,simDt,now){if(ship.land||ship.hold)ship.vb=null;const def
   else{spinQ(L,qS);const old=w0.copy(ship.pos);ship.pos.copy(ship.land.lo).applyQuaternion(qS).add(L.pos);ship.q.copy(qS).multiply(ship.land.lq);
    if(simDt>0)ship.vel.subVectors(ship.pos,old).divideScalar(simDt);ship.ref=L;ship.warpCapS=ship.capP||1e12;return}}
  // station-keeping: hold a fixed offset from a body (after launch, arrival or a jump)
- if(ship.hold){const H=ship.hold.b;if(wantThrust||ship.ap||matching()){ship.hold=null}
+ if(ship.hold){const H=ship.hold.b;if(wantThrust||ship.ap||matching()){ship.hold=null;if(!ship.ap)flash('Station-keeping released. You are flying free under gravity: X matches velocity, O enters orbit, P flies to the target.',7000)}
   else{ship.pos.copy(H.pos).add(ship.hold.off);ship.vel.copy(H.vel||ZERO);ship.ref=refBody(ship.pos);return}}
  const ref=refBody(ship.pos,true);ship.ref=ref;const mu=ref.GM*1e-9,R0=ref.R*KM+def.size*.6,rp=ref.prev||ref.pos,rv=ref.vel||ZERO;
  const r=NV.r.subVectors(ship.pos,rp),v=ship.vb===ref?NV.v.copy(ship.vr):NV.v.subVectors(ship.vel,rv);
@@ -1200,7 +1242,7 @@ function setFM(m){if(!ship.on){ship.mode=m;fmUI();return}if(m===ship.mode)return
   flash('Cruise flight. Press 0 to 5 for a cruise speed, P for light-speed autopilot.',7000)}
  ship.mode=m;fmUI();apUI()}
 function fmUI(){const nw=ship.mode==='newton';document.querySelectorAll('[data-fm]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fm===ship.mode)));$('#nw-opts').hidden=!nw;$('#cr-opts').hidden=nw;
- $('#h-keys').textContent=nw?'Arrows rotate, Q E roll, W S thrust, A D strafe, Space Shift up and down, X match velocity, P autopilot, O orbit, L land, N cruise mode, , and . time warp, C camera':'Arrow keys steer, Q E roll, W S throttle, 0 to 5 cruise speeds, X stop, P autopilot, J jump, N Newtonian mode, C camera';
+ $('#h-keys').textContent=(nw?'Arrows rotate, Q E roll, W S thrust, A D strafe, Space Shift up and down, X match velocity, P autopilot, O orbit, L land, N cruise mode, , and . time warp, C camera':'Arrow keys steer, Q E roll, W S throttle, 0 to 5 cruise speeds, X stop, P autopilot, J jump, N Newtonian mode, C camera')+'. Drag to orbit the camera, scroll to zoom, Home resets the camera.';
  document.querySelectorAll('.nwrow').forEach(e=>e.hidden=!nw)}
 function setThrust(lg){ship.acc=Math.pow(10,lg)*9.80665;$('#thrust').value=lg;$('#thrv').textContent=gee(ship.acc)}
 function apMode(mode){if(!ship.on||ship.mode!=='newton')return;if(ship.ap&&ship.ap.mode===mode){apOff('Autopilot off');return}
@@ -1217,8 +1259,10 @@ function updateMarkers(){const pro=$('#mk-pro'),ret=$('#mk-ret');let ok=ship.on&
 
 function capFor(b){return b.el?Math.pow(b.el[0],1.5)*3.15576e7*.01:b.parent?Math.abs(b.P)*864:1e12}
 function updateShip(raw,now,simDt){const NW=ship.mode==='newton';const def=ship.def,dt=Math.min(.1,raw),cap=CKM*KM*ship.mult;
- if(!ship.ap){tgt.set((NW?K('ArrowUp','PageUp'):K('ArrowUp','KeyR','PageUp')?1:0)-(NW?K('ArrowDown','PageDown'):K('ArrowDown','KeyF','PageDown')?1:0)+mouse.y,(NW?K('ArrowLeft'):K('KeyA','ArrowLeft')?1:0)-(NW?K('ArrowRight'):K('KeyD','ArrowRight')?1:0)+mouse.x,(K('KeyQ')?1:0)-(K('KeyE')?1:0)).multiplyScalar(1.15);ship.av.lerp(tgt,Math.min(1,dt*4))}
- else ship.av.multiplyScalar(1-Math.min(1,dt*6));
+ if(!ship.ap){tgt.set((NW?K('ArrowUp','PageUp'):K('ArrowUp','KeyR','PageUp')?1:0)-(NW?K('ArrowDown','PageDown'):K('ArrowDown','KeyF','PageDown')?1:0)+mouse.y,(NW?K('ArrowLeft'):K('KeyA','ArrowLeft')?1:0)-(NW?K('ArrowRight'):K('KeyD','ArrowRight')?1:0)+mouse.x,(K('KeyQ')?1:0)-(K('KeyE')?1:0)).multiplyScalar(1.15);
+  // two smoothing stages give an S-curve: turns ease in and ease out instead of snapping to full rate
+  ship.avT.lerp(tgt,Math.min(1,dt*5));ship.av.lerp(ship.avT,Math.min(1,dt*5))}
+ else{ship.avT.multiplyScalar(1-Math.min(1,dt*6));ship.av.multiplyScalar(1-Math.min(1,dt*6))}
  if(ship.av.lengthSq()>1e-8){eul.set(ship.av.x*dt,ship.av.y*dt,ship.av.z*dt);qd.setFromEuler(eul);ship.q.multiply(qd).normalize()}
  let rem=0,ang=0;
  if(NW){newtonStep(dt,simDt||0,now);if(ship.ref)ship.capP=Math.min(capFor(ship.land?ship.land.b:ship.ref),ship.ap&&ship.ap.to?capFor(ship.ap.to):1e12);const T=ship.target||ship.ref||B[0];w3.subVectors(ship.vel,T.vel||ZERO);ship.v=w3.length();if(ship.v>0)ship.mv.copy(w3).normalize();else fwd.set(0,0,-1).applyQuaternion(ship.q)}
@@ -1243,7 +1287,11 @@ function updateShip(raw,now,simDt){const NW=ship.mode==='newton';const def=ship.
  origin.copy(ship.pos);
  const kms=ship.v/KM,f=kms>0?Math.min(1.4,Math.log10(1+kms)/5.5):0;
  const fov=45+24*smst(.55,1.3,f);if(Math.abs(fov-camera.fov)>.05){camera.fov+=(fov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix()}
- if(ship.cam==='chase'){cq.slerp(ship.q,Math.min(1,dt*4.5));const D=ship.chase*(1+.18*f);camera.position.set(0,D*.12,D).applyQuaternion(cq);camera.up.set(0,1,0).applyQuaternion(cq);w3.set(0,D*.09,-D*2).applyQuaternion(cq);camera.lookAt(w3)}
+ if(ship.cam==='chase'){cq.slerp(ship.q,Math.min(1,dt*4.5));
+  // drag swings the rig around the ship and the wheel sets its distance; both glide to where you put them
+  const e=Math.min(1,dt*8);ship.cy+=(ship.cyT-ship.cy)*e;ship.cp+=(ship.cpT-ship.cp)*e;ship.chase*=Math.pow(ship.chaseT/ship.chase,e);
+  const D=ship.chase*(1+.18*f);qo.setFromEuler(eo.set(ship.cp,ship.cy,0,'YXZ')).premultiply(cq);
+  camera.position.set(0,D*.12,D).applyQuaternion(qo);camera.up.set(0,1,0).applyQuaternion(qo);w3.set(0,D*.09,-D*2).applyQuaternion(qo);camera.lookAt(w3)}
  else if(ship.cam==='cockpit'){camera.position.set(0,def.size*.06,-def.size*.3).applyQuaternion(ship.q);camera.quaternion.copy(ship.q);camera.up.set(0,1,0).applyQuaternion(ship.q)}
  else controls.update();
  def.obj.visible=ship.cam!=='cockpit';def.obj.quaternion.copy(ship.q);if(def.spin)def.spin.rotation.z+=dt*.06;
@@ -1261,7 +1309,7 @@ function renderShip(){const def=ship.def,cd=camera.position.length();shipCam.pos
 function hud(now){const t=ship.target,k=ship.v/KM,capK=CKM*ship.mult;
  $('#h-ship').textContent=ship.def.name;$('#h-setl').textContent='Cruise set';
  if(ship.mode==='newton'){predictOrbit();const T=t||ship.ref,ap=ship.ap;
-  $('#h-mode').textContent='Newtonian · '+(ship.land?'Landed on '+ship.land.b.name:ship.hold?'Station-keeping at '+ship.hold.b.name:ap?{go:'Autopilot to '+(ap.to||T).name,circ:'Orbit insertion',land:'Landing',match:'Matching velocity'}[ap.mode]:ship.tf>.005?'Thrusting':'Coasting');
+  $('#h-mode').textContent='Newtonian · '+(ship.land?'Landed on '+ship.land.b.name:ship.hold?'Station-keeping at '+ship.hold.b.name+' · W to fly':ap?{go:'Autopilot to '+(ap.to||T).name,circ:'Orbit insertion',land:'Landing',match:'Matching velocity'}[ap.mode]:ship.tf>.005?'Thrusting':'Coasting');
   const kk=ship.land?0:k;$('#h-spd').innerHTML=fmtV(kk)+'<small>'+(ship.land?'on the surface of '+ship.land.b.name:'relative to '+T.name)+(kk>.01*CKM?', '+fmtC(kk):'')+'</small>';
   $('#thr i').style.width=(ship.tf*100).toFixed(1)+'%';$('#thr b').style.display='none';
   $('#h-setl').textContent='Engine';$('#h-set').textContent='Thrust '+gee(ship.acc)+(ship.drag>.5?' · drag '+gee(ship.drag)+(ship.drag>30&&k>3?', re-entry heating':''):'');
@@ -1294,7 +1342,7 @@ $('#launch').addEventListener('click',()=>{ship.on?exitShip():launch()});
 $('#mult').addEventListener('input',e=>{ship.mult=+e.target.value;$('#multv').textContent=ship.mult+'c'});
 document.querySelectorAll('[data-cr]').forEach(b=>b.addEventListener('click',()=>{if(ship.on){if(ship.mode!=='cruise')setFM('cruise');cruise(+b.dataset.cr)}}));
 document.querySelectorAll('[data-fm]').forEach(b=>b.addEventListener('click',()=>setFM(b.dataset.fm)));
-$('#thrust').addEventListener('input',e=>setThrust(+e.target.value));
+$('#thrust').addEventListener('input',e=>{setThrust(+e.target.value);$('#l-realthr').checked=Math.abs(ship.acc/ship.rated-1)<.02});
 $('#b-orbit').addEventListener('click',()=>apMode('circ'));$('#b-land').addEventListener('click',()=>apMode('land'));$('#b-match').addEventListener('click',()=>apMode('match'));
 fmUI();
 $('#apGo').addEventListener('click',()=>{ship.ap?apOff('Autopilot off'):apOn()});
@@ -1314,13 +1362,36 @@ const typing=t=>t&&(t.tagName==='INPUT'&&t.type!=='checkbox'&&t.type!=='range'||
 addEventListener('keydown',e=>{if(!ship.on||e.ctrlKey||e.metaKey||e.altKey||typing(e.target))return;if(e.target.type==='range')e.target.blur();if(press(e.code))e.preventDefault()});
 addEventListener('keyup',e=>{keys[e.code]=false});
 addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
-// drag on the view to steer, like a joystick
-canvas.addEventListener('pointerdown',e=>{if(!ship.on||ship.cam==='look')return;mouse.down=true;mouse.sx=e.clientX;mouse.sy=e.clientY;canvas.setPointerCapture(e.pointerId)});
-canvas.addEventListener('pointermove',e=>{if(!mouse.down)return;const k=Math.min(innerWidth,innerHeight)*.25;mouse.x=Math.max(-1,Math.min(1,-(e.clientX-mouse.sx)/k));mouse.y=Math.max(-1,Math.min(1,-(e.clientY-mouse.sy)/k))});
+// drag on the view: in chase view it orbits the camera around the ship; in the cockpit it steers, like a joystick
+canvas.addEventListener('pointerdown',e=>{if(!ship.on||ship.cam==='look')return;mouse.down=true;mouse.sx=mouse.lx=e.clientX;mouse.sy=mouse.ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!mouse.down)return;
+ if(ship.cam==='chase'){ship.cyT-=(e.clientX-mouse.lx)*.006;ship.cpT=Math.max(-1.35,Math.min(1.35,ship.cpT-(e.clientY-mouse.ly)*.006));mouse.lx=e.clientX;mouse.ly=e.clientY;return}
+ const k=Math.min(innerWidth,innerHeight)*.25;mouse.x=Math.max(-1,Math.min(1,-(e.clientX-mouse.sx)/k));mouse.y=Math.max(-1,Math.min(1,-(e.clientY-mouse.sy)/k))});
 const mUp=()=>{mouse.down=false;mouse.x=mouse.y=0};canvas.addEventListener('pointerup',mUp);canvas.addEventListener('pointercancel',mUp);
 document.querySelectorAll('#pad button').forEach(bt=>{const c=bt.dataset.k,rel=()=>{keys[c]=false};
  bt.addEventListener('pointerdown',e=>{e.preventDefault();bt.setPointerCapture(e.pointerId);if(ship.on)press(c)});
  bt.addEventListener('pointerup',rel);bt.addEventListener('pointercancel',rel);bt.addEventListener('lostpointercapture',rel)});
+
+// scroll wheel: chase distance when flying, otherwise our eased zoom (free look keeps the orbit controls' own)
+addEventListener('wheel',e=>{if(e.target!==canvas||(ship.on&&ship.cam==='look'))return;e.preventDefault();e.stopPropagation();
+ const dy=e.deltaY*(e.deltaMode===1?33:e.deltaMode===2?innerHeight:1);zoomBy(Math.exp(Math.max(-600,Math.min(600,dy))*.0016))},{capture:true,passive:false});
+// the world under the pointer, nearest first; tiny ones get a few pixels of slack
+function bodyAt(cx,cy){let best=null,bd=Infinity;const W=innerWidth,H=innerHeight,t=Math.tan(camera.fov*D2R/2);
+ for(const b of ALL){if(!b.obj||!b.obj.visible||!b.R)continue;v3.copy(b.obj.position).project(camera);if(v3.z>1)continue;
+  const d=b.obj.position.distanceTo(camera.position),r=b.R*KM/(d*t)*H/2;if(Math.hypot((v3.x+1)/2*W-cx,(1-v3.y)/2*H-cy)<Math.max(r,6)+3&&d<bd){bd=d;best=b}}
+ return best}
+canvas.addEventListener('dblclick',e=>{const b=bodyAt(e.clientX,e.clientY);if(b)pick(b)});
+function resetCam(){if(ship.on){if(ship.cam==='look')controls.enabled=false;ship.cam='chase';ship.cyT=ship.cpT=0;ship.chaseT=ship.def.size*3.6;flash('Camera reset',2500);return}if(!fly)go(focus)}
+addEventListener('keydown',e=>{if(e.code!=='Home'||e.ctrlKey||e.metaKey||e.altKey||typing(e.target))return;e.preventDefault();resetCam()});
+// flight bar: More, help and collapse; the panels above it follow its height
+function hudH(){document.documentElement.style.setProperty('--hudh',$('#hud').offsetHeight+'px')}
+function hudTog(btn,box){const o=box.hidden;box.hidden=!o;btn.setAttribute('aria-expanded',String(o));hudH()}
+$('#h-more').addEventListener('click',()=>hudTog($('#h-more'),$('#h-extra')));
+$('#h-help').addEventListener('click',()=>hudTog($('#h-help'),$('#h-helpbox')));
+$('#h-min').addEventListener('click',()=>{const m=$('#hud').classList.toggle('min'),b=$('#h-min');b.textContent=m?'+':'–';b.setAttribute('aria-expanded',String(!m));b.setAttribute('aria-label',m?'Expand flight bar':'Collapse flight bar');hudH()});
+new ResizeObserver(hudH).observe($('#hud'));
+$('#l-realthr').addEventListener('change',realThrust);
+$('#leave').addEventListener('click',exitShip);
 
 /* view, lighting and theme */
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
@@ -1347,7 +1418,7 @@ function frame(now){
   origin.lerpVectors(fly.fromBody?fly.fromBody.pos:fly.fromPt,fly.to.pos,e);
   camera.position.copy(fly.dir).multiplyScalar(Math.exp(fly.l0+(fly.l1-fly.l0)*e+fly.bump*Math.sin(Math.PI*e)));camera.lookAt(0,0,0);
   if(s>=1)land()}
- else{origin.copy(focus.pos);controls.rotateSpeed=.6*Math.min(1,Math.max(.003,(camera.position.length()/(focus.R*KM)-1)*1.2));controls.update()}
+ else{origin.copy(focus.pos);zoomStep(dt);controls.rotateSpeed=.6*Math.min(1,Math.max(.003,(camera.position.length()/(focus.R*KM)-1)*1.2));controls.update()}
  for(const b of B)b.loc.subVectors(b.pos,origin);
  for(const s of XS){s.loc.subVectors(s.pos,origin);s.obj.position.copy(s.loc)}updateProbes();
  if(pred.visible&&ship.ref)pred.position.copy(ship.ref.pos).sub(origin);
