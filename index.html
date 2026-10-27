@@ -215,6 +215,7 @@ body[data-view="wire"] .lb em{color:var(--g2)}
   <label class="ck"><input type="checkbox" id="l-stars" checked>Stars (real catalog)</label>
   <label class="ck"><input type="checkbox" id="l-probes" checked>Spacecraft positions</label>
   <label class="ck"><input type="checkbox" id="l-sites" checked>Places</label>
+  <label class="ck"><input type="checkbox" id="l-bloom">Bloom (bright glow)</label>
   <hr>
   <div class="rng"><span>Interface</span><div class="sw" role="group" aria-label="Interface colour"><button data-accent="gray" aria-label="Gray" aria-pressed="true"></button><button data-accent="blue" aria-label="Blue" aria-pressed="false"></button><button data-accent="amber" aria-label="Amber" aria-pressed="false"></button><button data-accent="matrix" aria-label="Matrix green" aria-pressed="false"></button></div></div>
   <div class="row" style="margin-top:6px"><button class="btn" id="theme">Light interface</button></div>
@@ -809,8 +810,17 @@ let speed=SPEEDS[7][0];
 $('#speed').addEventListener('input',e=>{const s=SPEEDS[+e.target.value];speed=s[0];$('#speedv').textContent=s[1]});
 $('#play').addEventListener('click',e=>{playing=!playing;e.target.textContent=playing?'Pause':'Play';e.target.setAttribute('aria-pressed',String(playing))});
 $('#now').addEventListener('click',()=>{sim=Date.now()});
-const opt={fabric:false,time:true,solo:false,ride:true,orbits:true,labels:true,moons:true,helio:true,stars:true,sites:true,rel:true,probes:true};
-['fabric','time','solo','ride','orbits','labels','moons','helio','stars','sites','rel','probes'].forEach(k=>{const el=$('#l-'+k);el.checked=opt[k];el.addEventListener('change',()=>{opt[k]=el.checked;if(k==='stars')starsDirty=true;if(k==='fabric')$('#fabric-opts').hidden=!el.checked})});
+const opt={fabric:false,time:true,solo:false,ride:true,orbits:true,labels:true,moons:true,helio:true,stars:true,sites:true,rel:true,probes:true,bloom:!matchMedia('(pointer:coarse)').matches};
+['fabric','time','solo','ride','orbits','labels','moons','helio','stars','sites','rel','probes','bloom'].forEach(k=>{const el=$('#l-'+k);el.checked=opt[k];el.addEventListener('change',()=>{opt[k]=el.checked;if(k==='stars')starsDirty=true;if(k==='fabric')$('#fabric-opts').hidden=!el.checked;if(k==='bloom'&&el.checked)bloomOn()})});
+// optional bloom: the post-processing scripts (three r128 examples) load only once it is wanted, a few seconds after the page opens
+const bloom={c:null,busy:false};
+function loadScript(u){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+async function bloomOn(){if(bloom.c||bloom.busy)return;bloom.busy=true;const base='https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/';
+ try{for(const f of ['shaders/CopyShader.js','shaders/LuminosityHighPassShader.js','postprocessing/EffectComposer.js','postprocessing/RenderPass.js','postprocessing/ShaderPass.js','postprocessing/UnrealBloomPass.js'])await loadScript(base+f);
+  const pr=renderer.getPixelRatio(),rt=renderer.capabilities.isWebGL2?new THREE.WebGLMultisampleRenderTarget(innerWidth*pr,innerHeight*pr,{format:THREE.RGBAFormat}):undefined;
+  const c=new THREE.EffectComposer(renderer,rt);c.addPass(new THREE.RenderPass(scene,camera));c.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.7,.5,.88));c.setSize(innerWidth,innerHeight);bloom.c=c}
+ catch(e){opt.bloom=false;$('#l-bloom').checked=false}finally{bloom.busy=false}}
+setTimeout(()=>{if(opt.bloom)bloomOn()},3000);
 let warp=1;$('#warp').addEventListener('input',e=>warp=+e.target.value);
 
 /* fly */
@@ -1448,6 +1458,33 @@ function renderShip(){const def=ship.def,cd=camera.position.length();shipCam.pos
  shipCam.near=Math.max(def.size*.004,cd*.002);shipCam.far=cd*3+def.size*120;shipCam.aspect=camera.aspect;shipCam.fov=camera.fov;shipCam.updateProjectionMatrix();
  sunL.position.copy(B[0].loc).normalize();renderer.clearDepth();renderer.render(shipScene,shipCam)}
 
+/* Sun glare: a starburst, halo and lens ghosts drawn over everything in screen space. How much of the Sun's disk is in view (any world in
+   front of it, worked out like the eclipse shader) sets its strength, so it dims at a planet's limb and vanishes behind it. */
+const GL={scene:new THREE.Scene(),cam:new THREE.OrthographicCamera(-1,1,1,-1,-1,1),on:false};
+function glareTex(spikes,ghost){const n=256,cv=document.createElement('canvas');cv.width=cv.height=n;const cx=cv.getContext('2d'),c=n/2;cx.globalCompositeOperation='lighter';
+ const rad=(r,s)=>{const g=cx.createRadialGradient(c,c,0,c,c,r);s.forEach(x=>g.addColorStop(x[0],x[1]));cx.fillStyle=g;cx.fillRect(0,0,n,n)};
+ if(ghost){rad(c,[[0,'rgba(255,255,255,0)'],[.7,'rgba(255,255,255,.25)'],[.85,'rgba(255,255,255,.5)'],[1,'rgba(255,255,255,0)']]);return new THREE.CanvasTexture(cv)}
+ rad(c,[[0,'rgba(255,255,255,1)'],[.04,'rgba(255,250,235,.95)'],[.12,'rgba(255,230,190,.35)'],[.4,'rgba(255,210,160,.08)'],[1,'rgba(255,200,150,0)']]);
+ for(let k=0;k<spikes;k++){cx.save();cx.translate(c,c);cx.rotate(k/spikes*Math.PI+.3);const g=cx.createLinearGradient(-c,0,c,0);
+  g.addColorStop(0,'rgba(255,240,220,0)');g.addColorStop(.5,'rgba(255,245,230,.55)');g.addColorStop(1,'rgba(255,240,220,0)');cx.fillStyle=g;cx.fillRect(-c,-1.2,n,2.4);cx.restore()}
+ return new THREE.CanvasTexture(cv)}
+const glareM=(t,col)=>new THREE.MeshBasicMaterial({map:t,color:col,transparent:true,blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false});
+GL.burst=new THREE.Mesh(new THREE.PlaneGeometry(2,2),glareM(glareTex(6,false),0xffffff));GL.scene.add(GL.burst);
+GL.ghosts=[[-.35,.09,0x7fb2ff],[-.75,.05,0xffd27a],[-1.25,.14,0x9cffc6],[.45,.04,0xff9a7a]].map(([f,s,c])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(2,2),glareM(glareTex(0,true),c));m.userData={f,s};GL.scene.add(m);return m});
+const gS=new THREE.Vector3(),gO=new THREE.Vector3();
+function updateGlare(){const s=B[0];GL.on=false;if(look.view!=='real'||!s.obj.visible)return;
+ gS.copy(s.obj.position).sub(camera.position);const ds=gS.length(),as=s.R*KM/ds;if(ds<s.R*KM*1.5)return;gS.divideScalar(ds);
+ // fraction of the Sun's disk in view: every other world, judged as overlapping disks
+ let vis=1;for(const b of ALL){if(b===s||!b.obj||!b.obj.visible||!b.R)continue;gO.copy(b.obj.position).sub(camera.position);const t=gO.dot(gS);if(t<=0||t>ds)continue;
+  const dO=gO.length(),ao=Math.asin(Math.min(1,b.R*KM/dO)),sep=Math.acos(Math.min(1,Math.max(-1,gO.dot(gS)/dO)));if(sep>as+ao)continue;
+  const full=Math.min(1,ao*ao/(as*as)),x=Math.min(1,Math.max(0,(sep-Math.abs(as-ao))/(as+ao-Math.abs(as-ao))));vis*=1-full*(1-x*x*(3-2*x))}
+ v3.copy(s.obj.position).project(camera);if(v3.z>1)return;const edge=Math.max(Math.abs(v3.x),Math.abs(v3.y));vis*=1-smst(1,1.35,edge);if(vis<.003)return;
+ const asp=camera.aspect,au=ds/AU,I=vis*Math.min(2.5,1/Math.max(au*au,.04)),r=.55*Math.min(1.6,Math.pow(I,.35))*Math.max(.5,Math.min(1.4,as*120));
+ GL.cam.left=-asp;GL.cam.right=asp;GL.cam.updateProjectionMatrix();const x=v3.x*asp,y=v3.y;
+ GL.burst.position.set(x,y,0);GL.burst.scale.setScalar(r);GL.burst.material.opacity=Math.min(1,I*.9);
+ for(const g of GL.ghosts){const u=g.userData;g.position.set(x*u.f,y*u.f,0);g.scale.setScalar(u.s*(1+edge*.6));g.material.opacity=Math.min(.6,I*.35)*(1-smst(.9,1.3,edge))}
+ GL.on=true}
+
 function hud(now){const t=ship.target,k=ship.v/KM,capK=CKM*ship.mult;
  $('#h-ship').textContent=ship.def.name;$('#h-setl').textContent='Cruise set';
  if(ship.mode==='newton'){predictOrbit();const T=t||ship.ref,ap=ship.ap;
@@ -1583,10 +1620,11 @@ function frame(now){
  for(const b of B)placeOrbit(b,ride);
  helio.visible=opt.helio;helio.position.copy(B[0].loc).negate().add(B[0].loc).sub(origin);
  updateSky();updateStars();updateLook();updateTiles();updateMaps(now);
- renderer.clear();renderer.render(scene,camera);if(ship.on)renderShip();updateLabels();updateMarkers();
+ if(bloom.c&&opt.bloom)bloom.c.render();else{renderer.clear();renderer.render(scene,camera)}if(ship.on)renderShip();
+ updateGlare();if(GL.on){renderer.clearDepth();renderer.render(GL.scene,GL.cam)}updateLabels();updateMarkers();
  if(now-infoT>250){infoT=now;updateInfo();if(look.view==='gravity')updatePull();if(ship.on)hud(now);const d=new Date(sim);$('#date').textContent=isNaN(d)?'—':d.toISOString().slice(0,16).replace('T',' ')+' UTC';const yr=d.getUTCFullYear();$('#dwarn').hidden=!(yr<-3000||yr>3000)}
  requestAnimationFrame(frame)}
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;shipCam.aspect=camera.aspect;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;shipCam.aspect=camera.aspect;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);if(bloom.c)bloom.c.setSize(innerWidth,innerHeight)});
 requestAnimationFrame(frame);
 })();
 </script>
