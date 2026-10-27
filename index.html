@@ -794,7 +794,7 @@ B.forEach(b=>{const li=document.createElement('li');const bt=document.createElem
 $('#q').addEventListener('input',e=>filterList(e.target.value.trim().toLowerCase()));
 $('#q').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const v=e.target.value.trim().toLowerCase();if(!v)return;
  const li=[...list.querySelectorAll('li')].find(l=>!l.classList.contains('hd')&&l.style.display!=='none');if(li){li.querySelector('button').click();return}
- const N=CAT.names.map(n=>n.toLowerCase());let i=N.indexOf(v);if(i<0)i=N.findIndex(n=>n.startsWith(v));if(i<0)i=N.findIndex(n=>n.includes(v));if(i>=0)pick(getStar(i))});
+ const N=CAT.names.map(n=>n.toLowerCase());let i=N.indexOf(v);if(i<0){const k=xcFind(v);if(k>=0)i=xcPromote(k)}if(i<0)i=N.findIndex(n=>n.startsWith(v));if(i<0)i=N.findIndex(n=>n.includes(v));if(i>=0)pick(getStar(i))});
 
 /* panels */
 document.querySelectorAll('.panel').forEach(p=>{const bt=p.querySelector('.mn');const t=()=>{const m=p.classList.toggle('min');bt.textContent=m?'+':'–';bt.setAttribute('aria-expanded',String(!m));bt.setAttribute('aria-label',m?'Expand panel':'Minimize panel')};
@@ -978,10 +978,10 @@ const STAR_OVR={'Proxima Centauri':[.1542,.1221,3042],'Rigil Kentaurus':[1.2234,
 const STAR_ALIAS={'τ Cet':'Tau Ceti','Gliese 244B':'Sirius B','Gliese 65A':'Luyten 726-8 A','Gliese 65B':'Luyten 726-8 B (UV Ceti)'};
 const CAT=(()=>{
  const f=new Float32Array(STAR_BUF),n=f.length/5,names=STAR_META.names.split('|').map(s=>STAR_ALIAS[s]||s),spect=STAR_META.spect.split('|');
- const pos=new Float64Array((n+1)*3),M=new Float32Array(n+1),ci=new Float32Array(n+1),RU=new Float64Array(n+1),proper=new Uint8Array(n+1),v=new THREE.Vector3();
+ const X=n+1+64,pos=new Float64Array(X*3),M=new Float32Array(X),ci=new Float32Array(X),RU=new Float64Array(X),proper=new Uint8Array(X),v=new THREE.Vector3();
  for(let i=0;i<n;i++){eqToScene(f[i*5],f[i*5+1],f[i*5+2],v).multiplyScalar(PC);pos[i*3]=v.x;pos[i*3+1]=v.y;pos[i*3+2]=v.z;M[i]=f[i*5+3];ci[i]=f[i*5+4]}
  M[n]=4.83;ci[n]=.656;names.push('Sun');spect.push('G2V');STAR_META.proper.forEach(i=>proper[i]=1);
- const C={n:n+1,sun:n,pos,M,ci,names,spect,proper,RU};
+ const C={n:n+1,sun:n,nx:n+1,cap:X,pos,M,ci,names,spect,proper,RU}; // slots past n hold faint stars promoted from the GPU layer when you pick one
  for(let i=0;i<C.n;i++)RU[i]=starPhys(i,C).R*695700*KM;return C})();
 function starPhys(i,C){C=C||CAT;const o=STAR_OVR[C.names[i]];if(i===C.sun)return {T:5772,R:1,m:1,L:1,est:false};
  if(o)return {T:o[2],R:o[0],m:o[1],L:o[0]*o[0]*Math.pow(o[2]/5772,4),est:false};
@@ -1184,7 +1184,51 @@ function updateStarLabels(W,H){const beta=sky.mat.uniforms.beta.value,tgt=ship.o
 function starAt(cx,cy){const W=innerWidth,H=innerHeight;let best=-1,bd=14*14;
  for(let i=0;i<CAT.n;i++){if(sky.t[i*3]+sky.t[i*3+1]+sky.t[i*3+2]<.02)continue;v3.set(SDIR[i*3],SDIR[i*3+1],SDIR[i*3+2]).multiplyScalar(5e8).add(camera.position).project(camera);
   if(v3.z>1)continue;const dx=(v3.x+1)/2*W-cx,dy=(1-v3.y)/2*H-cy,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}
+ if(best<0&&XC.ready){const k=xcAt(cx,cy);if(k>=0)best=xcPromote(k)}
  return best}
+
+/* the rest of HYG: about 100,000 fainter stars, drawn entirely on the GPU (each one works out its own brightness from where the camera is),
+   loaded quietly a few seconds after the page opens. Picking one copies it into the catalogue above so you can visit it. */
+const E2S=new THREE.Matrix3();{const c=Math.cos(OBL),s=Math.sin(OBL);E2S.set(1,0,0,0,-s,c,0,-c,-s)} // equatorial to scene axes, as eqToScene
+const S2E=E2S.clone().transpose(),XC={ready:false,n:0,pts:null,fade:{value:0},camPc:{value:new THREE.Vector3()},prom:{}};
+async function loadXC(){try{const r=await fetch('data/stars-hyg.bin.gz');if(!r.ok)return;
+ const buf=await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),dv=new DataView(buf);if(dv.getUint32(0,true)!==0x534f4754)return;
+ const n=dv.getUint32(4,true);let o=12;const xyzm=new Float32Array(buf,o,n*4);o+=n*16;const ci=new Int16Array(buf,o,n);o+=n*2+(n%2?2:0);
+ Object.assign(XC,{n,xyzm,ci,num:new Uint32Array(buf,o,n),cat:new Uint8Array(buf,o+n*4,n),cls:new Uint8Array(buf,o+n*5,n)});
+ const ib=new THREE.InterleavedBuffer(xyzm,4),g=new THREE.BufferGeometry(),tint=new THREE.BufferAttribute(new Uint8Array(n*3),3,true);
+ g.setAttribute('position',new THREE.InterleavedBufferAttribute(ib,3,0));g.setAttribute('absMag',new THREE.InterleavedBufferAttribute(ib,1,3));g.setAttribute('tint',tint);
+ const mat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{...AB,camPc:XC.camPc,fade:XC.fade,e2s:{value:E2S},px:sky.mat.uniforms.px},
+  vertexShader:`#include <common>
+#include <logdepthbuf_pars_vertex>
+${GLSL_ABERR}
+${GLSL_DOP}
+uniform vec3 camPc;uniform mat3 e2s;uniform float px,fade;attribute float absMag;attribute vec3 tint;varying vec3 vC;
+void main(){vec3 rel=position-camPc;float d=length(rel);vC=vec3(0.);gl_PointSize=0.;gl_Position=vec4(2.,2.,2.,1.);
+ if(d>1e-4){float m=absMag+5.*log(d)/log(10.)-5.,f=pow(10.,-.4*(m-6.5)),I=f<1.?.085*f:min(1.6,.085*pow(f,.38)),sz=min(4.2,.85+.42*log(max(1.,f))/log(10.));
+  float D;vec3 dp=aberr(normalize(e2s*rel),D);vC=doppler(tint*I*fade,D);gl_Position=projectionMatrix*modelViewMatrix*vec4(dp*5e8,1.);
+  gl_PointSize=dot(vC,vC)<1e-6?0.:px*sz*clamp(.9+(D-1.)*.35,.6,3.);}
+#include <logdepthbuf_vertex>
+}`,fragmentShader:sky.mat.fragmentShader});
+ XC.pts=new THREE.Points(g,mat);XC.pts.frustumCulled=false;XC.pts.renderOrder=-1;scene.add(XC.pts);XC.ready=true;
+ // colours from B-V, in slices so the page stays smooth
+ for(let s=0;s<n;s+=20000){for(let i=s;i<Math.min(n,s+20000);i++){const c=bbRGB(teff(ci[i]/1000)),l=(c[0]+c[1]+c[2])/3,k=c.map(x=>l+(x-l)*.8),mx=Math.max(...k);
+   tint.array[i*3]=k[0]/mx*255;tint.array[i*3+1]=k[1]/mx*255;tint.array[i*3+2]=k[2]/mx*255}tint.needsUpdate=true;await new Promise(r=>setTimeout(r,0))}}catch(e){}}
+setTimeout(()=>(window.requestIdleCallback||setTimeout)(loadXC),4000);
+function updateXC(){if(!XC.ready)return;XC.pts.visible=opt.stars;XC.pts.position.copy(camera.position);XC.fade.value=Math.min(1,XC.fade.value+.02);
+ v3.copy(camera.position).add(origin).applyMatrix3(S2E).divideScalar(PC);XC.camPc.value.copy(v3)}
+const xcName=k=>(XC.cat[k]===1?'HIP ':XC.cat[k]===2?'HD ':'HYG ')+XC.num[k];
+function xcPromote(k){if(XC.prom[k]!=null)return XC.prom[k];let i=CAT.nx;if(i>=CAT.cap){i=CAT.n;CAT.nx=CAT.n}CAT.nx=i+1;
+ const x=XC.xyzm;eqToScene(x[k*4],x[k*4+1],x[k*4+2],v3).multiplyScalar(PC);CAT.pos[i*3]=v3.x;CAT.pos[i*3+1]=v3.y;CAT.pos[i*3+2]=v3.z;
+ CAT.M[i]=x[k*4+3];CAT.ci[i]=XC.ci[k]/1000;CAT.names[i]=xcName(k);CAT.spect[i]=XC.cls[k]?String.fromCharCode(XC.cls[k]):'';CAT.RU[i]=starPhys(i).R*695700*KM;
+ for(const q in XC.prom)if(XC.prom[q]===i)delete XC.prom[q];XC.prom[k]=i;return i}
+// the faint star under the pointer, among those bright enough to see from here
+function xcAt(cx,cy){const W=innerWidth,H=innerHeight,c=XC.camPc.value,x=XC.xyzm;let best=-1,bd=10*10;
+ for(let k=0;k<XC.n;k++){const dx0=x[k*4]-c.x,dy0=x[k*4+1]-c.y,dz0=x[k*4+2]-c.z,d=Math.sqrt(dx0*dx0+dy0*dy0+dz0*dz0);if(x[k*4+3]+5*Math.log10(d)-5>7.5)continue;
+  v3.set(dx0,dy0,dz0).applyMatrix3(E2S).normalize().multiplyScalar(5e8).add(camera.position).project(camera);if(v3.z>1)continue;
+  const ex=(v3.x+1)/2*W-cx,ey=(1-v3.y)/2*H-cy,dd=ex*ex+ey*ey;if(dd<bd){bd=dd;best=k}}
+ return best}
+function xcFind(q){const m=/^(hip|hd)\s*(\d+)$/i.exec(q);if(!m||!XC.ready)return -1;const cat=m[1].toLowerCase()==='hip'?1:2,num=+m[2];
+ for(let k=0;k<XC.n;k++)if(XC.num[k]===num&&XC.cat[k]===cat)return k;return -1}
 const clk={x:0,y:0,t:0};
 canvas.addEventListener('pointerdown',e=>{clk.x=e.clientX;clk.y=e.clientY;clk.t=performance.now()});
 canvas.addEventListener('pointerup',e=>{if(performance.now()-clk.t>450||Math.hypot(e.clientX-clk.x,e.clientY-clk.y)>5)return;
@@ -1584,7 +1628,7 @@ document.querySelectorAll('.sw [data-accent]').forEach(b=>b.addEventListener('cl
 
 
 // ?debug exposes the internals for checking things from the browser console
-if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t},
+if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,XC,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t},
  // render n frames now, for checks while the tab is in the background (where requestAnimationFrame pauses)
  step:(n=1,ms=16)=>{const raf=window.requestAnimationFrame;window.requestAnimationFrame=()=>0;try{for(let i=0;i<n;i++){last=performance.now()-ms;frame(performance.now())}}finally{window.requestAnimationFrame=raf}}};
 
@@ -1619,7 +1663,7 @@ function frame(now){
   b.obj.visible=!b.parent||opt.moons||b===focus;if(b.soiM){b.soiM.position.copy(b.obj.position);b.soiM.visible=look.view==='gravity'&&b.obj.visible&&(!b.parent||moonVisible(b)||b===focus)}}
  for(const b of B)placeOrbit(b,ride);
  helio.visible=opt.helio;helio.position.copy(B[0].loc).negate().add(B[0].loc).sub(origin);
- updateSky();updateStars();updateLook();updateTiles();updateMaps(now);
+ updateSky();updateStars();updateXC();updateLook();updateTiles();updateMaps(now);
  if(bloom.c&&opt.bloom)bloom.c.render();else{renderer.clear();renderer.render(scene,camera)}if(ship.on)renderShip();
  updateGlare();if(GL.on){renderer.clearDepth();renderer.render(GL.scene,GL.cam)}updateLabels();updateMarkers();
  if(now-infoT>250){infoT=now;updateInfo();if(look.view==='gravity')updatePull();if(ship.on)hud(now);const d=new Date(sim);$('#date').textContent=isNaN(d)?'—':d.toISOString().slice(0,16).replace('T',' ')+' UTC';const yr=d.getUTCFullYear();$('#dwarn').hidden=!(yr<-3000||yr>3000)}
