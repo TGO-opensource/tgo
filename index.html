@@ -544,8 +544,10 @@ function paint(id,w,h){const cv=document.createElement('canvas');cv.width=w;cv.h
  for(let j=0;j<h;j++){const la=(.5-(j+.5)/h)*Math.PI,cl=Math.cos(la),sl=Math.sin(la);
   for(let i=0;i<w;i++){const lo=(i+.5)/w*TAU-Math.PI,x=cl*Math.cos(lo),z=-cl*Math.sin(lo),c=f(x,sl,z,la,lo),o=(j*w+i)*4;d[o]=c[0];d[o+1]=c[1];d[o+2]=c[2];d[o+3]=255}}
  cx.putImageData(im,0,0);const t=new THREE.CanvasTexture(cv);t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t}
-function ringTex(){const cv=document.createElement('canvas');cv.width=1024;cv.height=4;const cx=cv.getContext('2d'),im=cx.createImageData(1024,4),d=im.data,r0=74658,r1=136775;
- for(let i=0;i<1024;i++){const r=r0+(r1-r0)*i/1023;let a=r<92000?.18:r<117580?.85:r<122170?.06:r<133400||r>133800?.6:.05;if(r>117580&&r<122170)a=.06;
+// Saturn's ring texture spans 69,462 to 141,072 km (fitted to the Cassini Division and the A ring's outer edge in the Solar System Scope strip)
+const RING=[69462,141072];
+function ringTex(){const cv=document.createElement('canvas');cv.width=1024;cv.height=4;const cx=cv.getContext('2d'),im=cx.createImageData(1024,4),d=im.data,r0=RING[0],r1=RING[1];
+ for(let i=0;i<1024;i++){const r=r0+(r1-r0)*i/1023;let a=r<74658||r>136775?0:r<92000?.18:r<117580?.85:r<122170?.06:r<133400||r>133800?.6:.05;if(r>117580&&r<122170)a=.06;
   a*=.75+.5*vn(i*.35,0,0,7)*vn(i*.05,1,0,8);const k=r<92000?.55:r<117580?1:.85;
   for(let j=0;j<4;j++){const o=(j*1024+i)*4;d[o]=228*k;d[o+1]=210*k;d[o+2]=170*k;d[o+3]=Math.min(255,a*255)}}
  cx.putImageData(im,0,0);return new THREE.CanvasTexture(cv)}
@@ -566,18 +568,41 @@ B.forEach(b=>{
   m.uniforms.map.value=texL.load(TEX.earth);m.uniforms.night.value=texL.load(TEX.night);m.uniforms.spec.value=texL.load(TEX.spec);
   const cm=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_CLOUD,transparent:true,depthWrite:false,uniforms:{map:{value:texL.load(TEX.clouds)},sunPos:{value:new THREE.Vector3()},lit:{value:1},fade:{value:1}}});
   b.clouds=new THREE.Mesh(sphG,cm);b.clouds.scale.setScalar(1.004);b.spin.add(b.clouds);look.atm.push(cm)}
- else if(b.id==='moon')m.uniforms.map.value=texL.load(TEX.moon);
+ else if(b.id==='moon')m.uniforms.map.value=b.proc=texL.load(TEX.moon);
  else look.queue.push(b);
  [m.uniforms.map.value,m.uniforms.night.value].forEach(t=>{if(t!==blank)t.anisotropy=renderer.capabilities.getMaxAnisotropy()});
- if(b.rings){const g=new THREE.RingGeometry(b.rings[0]/b.R,b.rings[4]/b.R,256,1),p=g.attributes.position,uv=g.attributes.uv,r0=b.rings[0]/b.R,r1=b.rings[4]/b.R;
+ if(b.rings){const r0=RING[0]/b.R,r1=RING[1]/b.R,g=new THREE.RingGeometry(r0,r1,256,1),p=g.attributes.position,uv=g.attributes.uv;
   for(let i=0;i<p.count;i++){const r=Math.hypot(p.getX(i),p.getY(i));uv.setXY(i,(r-r0)/(r1-r0),.5)}g.rotateX(-Math.PI/2);
   b.ringReal=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:ringTex(),transparent:true,side:THREE.DoubleSide,depthWrite:false}));b.obj.children[0].add(b.ringReal)}
 });
 const sunB=byId.sun;sunB.glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex([[0,'rgba(255,250,230,1)'],[.12,'rgba(255,220,150,.9)'],[.3,'rgba(255,170,70,.28)'],[.6,'rgba(255,120,40,.07)'],[1,'rgba(255,100,30,0)']]),blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
 sunB.glow.scale.setScalar(16);sunB.obj.add(sunB.glow);
 // paint the procedural worlds a few at a time so the page stays responsive
-function paintNext(){const b=look.queue.shift();if(!b)return;const big=b.kind!=='moon'||b.id==='titan';b.real.material.uniforms.map.value=paint(b.id,big?768:384,big?384:192);setTimeout(paintNext,30)}
+function paintNext(){const b=look.queue.shift();if(!b)return;const big=b.kind!=='moon'||b.id==='titan';b.proc=paint(b.id,big?768:384,big?384:192);if(b.mapLv==null||b.mapLv<0)b.real.material.uniforms.map.value=b.proc;setTimeout(paintNext,30)}
 setTimeout(paintNext,200);
+
+/* real surface maps (data/tex/), fetched when a world is big enough on screen to need them; the painted surfaces stand in until then,
+   and stay for worlds without an openly licensed map. 2k loads at about 40 px across (or when focused), 4k at about 500 px; few are kept at once */
+const MAPS={sun:['sun-2k.jpg'],mercury:['mercury-2k.jpg'],venus:['venus-2k.jpg'],moon:['moon-2k.jpg','moon-4k.jpg'],mars:['mars-2k.jpg','mars-4k.jpg'],
+ jupiter:['jupiter-2k.jpg','jupiter-4k.jpg'],saturn:['saturn-2k.jpg','saturn-4k.jpg'],uranus:['uranus-2k.jpg'],neptune:['neptune-2k.jpg'],
+ io:['io-2k.jpg'],ganymede:['ganymede-2k.jpg'],triton:['triton-2k.jpg'],ariel:['ariel-1k.jpg'],miranda:['miranda-1k.jpg'],phobos:['phobos-1k.jpg'],deimos:['deimos-1k.jpg']};
+const MP={busy:0,live:2,t:0,f:{},keep2:8,keep4:1};
+function mapFile(name){return MP.f[name]||(MP.f[name]={name,st:0,tex:null,used:0,big:/-4k/.test(name)})}
+function mapLoad(m){m.st=1;MP.busy++;texL.load('data/tex/'+m.name,t=>{MP.busy--;t.anisotropy=renderer.capabilities.getMaxAnisotropy();m.tex=t;m.st=2},undefined,()=>{MP.busy--;m.st=3;m.retry=performance.now()+3e4})}
+function mapShow(b,lv){const L=MAPS[b.id];b.mapLv=lv;b.real.material.uniforms.map.value=lv<0?(b.proc||blank):mapFile(L[lv]).tex}
+function updateMaps(now){if(now-MP.t<250)return;MP.t=now;if(look.view!=='real')return;const k=innerHeight/(2*Math.tan(camera.fov*D2R/2));
+ for(const id in MAPS){const b=byId[id],L=MAPS[id];if(!b.obj.visible)continue;
+  const px=b.R*KM/Math.max(b.obj.position.distanceTo(camera.position),1e-9)*k,want=L[1]&&px>500?1:px>40||b===focus?0:-1;
+  for(let lv=0;lv<=want;lv++){const m=mapFile(L[lv]);m.used=now;if((m.st===0||(m.st===3&&now>m.retry))&&MP.busy<MP.live)mapLoad(m)}
+  // show the sharpest wanted map that has arrived; a sharper one already showing stays until it is evicted
+  const cur=b.mapLv??-1;let best=-1;for(let lv=want;lv>=0;lv--)if(mapFile(L[lv]).st===2){best=lv;break}
+  if(cur>best&&mapFile(L[cur]).st===2)best=cur;if(best!==cur)mapShow(b,best)}
+ if(byId.saturn.ringReal&&!MP.ring&&mapFile('saturn-2k.jpg').st>0){MP.ring=1;texL.load('data/tex/saturn-ring.png',t=>{byId.saturn.ringReal.material.map=t;byId.saturn.ringReal.material.needsUpdate=true})}
+ // keep GPU memory bounded: drop the least recently wanted maps beyond the budget, falling back to the next sharpest one
+ for(const big of [true,false]){const ld=Object.values(MP.f).filter(m=>m.st===2&&m.big===big).sort((a,b)=>a.used-b.used),cap=big?MP.keep4:MP.keep2;
+  for(const m of ld.slice(0,Math.max(0,ld.length-cap))){if(m.used===now)continue;
+   for(const id in MAPS){const b=byId[id],lv=MAPS[id].indexOf(m.name);if(lv>=0&&b.mapLv===lv)mapShow(b,lv>0&&mapFile(MAPS[id][0]).st===2?0:-1)}
+   m.tex.dispose();m.tex=null;m.st=0}}}
 
 /* streamed Earth imagery: NASA GIBS Blue Marble (shaded relief and bathymetry), public domain, no key.
    EPSG:4326 tiles are 512 px and 288/2^z degrees wide from (-180, 90); levels 3 to 7 tile the globe exactly, 36° down to 2.25° (about 500 m per pixel).
@@ -1446,7 +1471,9 @@ document.querySelectorAll('.sw [data-accent]').forEach(b=>b.addEventListener('cl
 
 
 // ?debug exposes the internals for checking things from the browser console
-if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t}};
+if(/[?&]debug\b/.test(location.search))window.TGO={B,byId,ALL,sky,CAT,camera,controls,renderer,look,origin,ship,TL,get focus(){return focus},setSim:t=>{sim=t},
+ // render n frames now, for checks while the tab is in the background (where requestAnimationFrame pauses)
+ step:(n=1,ms=16)=>{const raf=window.requestAnimationFrame;window.requestAnimationFrame=()=>0;try{for(let i=0;i<n;i++){last=performance.now()-ms;frame(performance.now())}}finally{window.requestAnimationFrame=raf}}};
 
 /* loop */
 setView('real');
@@ -1479,7 +1506,7 @@ function frame(now){
   b.obj.visible=!b.parent||opt.moons||b===focus;if(b.soiM){b.soiM.position.copy(b.obj.position);b.soiM.visible=look.view==='gravity'&&b.obj.visible&&(!b.parent||moonVisible(b)||b===focus)}}
  for(const b of B)placeOrbit(b,ride);
  helio.visible=opt.helio;helio.position.copy(B[0].loc).negate().add(B[0].loc).sub(origin);
- updateSky();updateStars();updateLook();updateTiles();
+ updateSky();updateStars();updateLook();updateTiles();updateMaps(now);
  renderer.clear();renderer.render(scene,camera);if(ship.on)renderShip();updateLabels();updateMarkers();
  if(now-infoT>250){infoT=now;updateInfo();if(look.view==='gravity')updatePull();if(ship.on)hud(now);const d=new Date(sim);$('#date').textContent=isNaN(d)?'—':d.toISOString().slice(0,16).replace('T',' ')+' UTC';const yr=d.getUTCFullYear();$('#dwarn').hidden=!(yr<-3000||yr>3000)}
  requestAnimationFrame(frame)}
