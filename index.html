@@ -469,20 +469,39 @@ varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
 void main(){vUv=uv;vL=position;vN=normalize(mat3(modelMatrix)*normal);vec4 w=modelMatrix*vec4(position,1.);vP=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;
 #include <logdepthbuf_vertex>
 }`;
+// eclipses: how much of the Sun's disk the nearest few bodies hide from a point (umbra, penumbra and annular), as two overlapping disks.
+// occ[i] = centre and radius of an occluder (scene units, camera-relative), occA[i] = 1 if it has an atmosphere that bends red light into its shadow
+const GLSL_OCC=`uniform vec4 occ[4];uniform float occA[4],sunR;
+float diskOcc(float as,float ao,float d){if(d>=as+ao)return 0.;float full=min(1.,ao*ao/(as*as));return full*(1.-smoothstep(abs(as-ao),as+ao,d));}
+vec3 shade(vec3 P){vec3 S=sunPos-P;float ds=length(S);vec3 Ls=S/ds;float as=sunR/ds,lf=1.,red=0.;
+ for(int i=0;i<4;i++){if(occ[i].w<=0.)continue;vec3 O=occ[i].xyz-P;if(dot(O,Ls)<=0.)continue;float dO=length(O),ao=asin(min(1.,occ[i].w/dO));
+  float f=diskOcc(as,ao,acos(clamp(dot(O/dO,Ls),-1.,1.)));lf*=1.-f;red=max(red,smoothstep(.97,1.,f)*occA[i]);}
+ return vec3(lf)+vec3(.62,.2,.06)*red*.5;}`;
 const FS_BODY=`#include <common>
 #include <logdepthbuf_pars_fragment>
 uniform sampler2D map,night,spec;uniform float hasNight,hasSpec,lit,mode,emissive,gsurf,gcent;uniform vec3 sunPos,temp;
 varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
 ${GLSL_HEAT}
 ${GLSL_GRAV}
+${GLSL_OCC}
+#ifdef RINGS
+uniform sampler2D ringT;uniform vec3 ringN,ringC;uniform vec2 ringR;
+// the rings' shadow: follow the ray toward the Sun to the ring plane and read the ring's opacity there
+float ringShade(vec3 P,vec3 L){float dn=dot(L,ringN);if(abs(dn)<1e-4)return 1.;float t=dot(ringC-P,ringN)/dn;if(t<=0.)return 1.;
+ float r=length(P+L*t-ringC);if(r<ringR.x||r>ringR.y)return 1.;return 1.-.92*texture2D(ringT,vec2((r-ringR.x)/(ringR.y-ringR.x),.5)).a;}
+#endif
 void main(){
 #include <logdepthbuf_fragment>
  vec3 N=normalize(vN),L=normalize(sunPos-vP),V=normalize(cameraPosition-vP);float ndl=dot(N,L);vec3 col;
  if(mode<.5){vec3 tex=texture2D(map,vUv).rgb;
   if(emissive>.5){float mu=max(dot(N,V),0.);col=tex*mix(vec3(1.,.5,.2),vec3(1.),pow(mu,.5))*(.3+.75*pow(mu,.6));}
-  else{float d=lit>.5?max(ndl,0.):1.;col=tex*((lit>.5?.03:0.)+d*1.12);
-   if(hasSpec>.5&&lit>.5)col+=vec3(1.,.95,.85)*pow(max(dot(reflect(-L,N),V),0.),38.)*texture2D(spec,vUv).r*.55*step(0.,ndl);
-   if(hasNight>.5&&lit>.5)col+=texture2D(night,vUv).r*vec3(1.,.8,.5)*(1.-smoothstep(-.12,.06,ndl))*1.25;}
+  else{vec3 sh=lit>.5?shade(vP):vec3(1.);
+#ifdef RINGS
+   if(lit>.5)sh*=ringShade(vP,L);
+#endif
+   float d=lit>.5?max(ndl,0.):1.;col=tex*((lit>.5?.03:0.)+d*1.12*sh);
+   if(hasSpec>.5&&lit>.5)col+=vec3(1.,.95,.85)*pow(max(dot(reflect(-L,N),V),0.),38.)*texture2D(spec,vUv).r*.55*step(0.,ndl)*sh.x;
+   if(hasNight>.5&&lit>.5)col+=max(texture2D(night,vUv).r-.16,0.)*1.19*vec3(1.,.8,.5)*(1.-smoothstep(-.12,.06,ndl))*1.25;}
   float lu=dot(col,vec3(.2126,.7152,.0722));col=max(mix(vec3(lu),col,1.22),0.);}
  else if(mode<1.5){float la=normalize(vL).y;float T=emissive>.5?temp.x:mix(temp.y,temp.x,pow(max(ndl,0.),.35))-temp.z*la*la;
   col=heat(pow(clamp((T+273.)/800.,0.,1.),.6));if(lit<.5&&emissive<.5)col=heat(pow(clamp((temp.x+273.)/800.,0.,1.),.6));}
@@ -492,9 +511,46 @@ void main(){
 const FS_CLOUD=`#include <common>
 #include <logdepthbuf_pars_fragment>
 uniform sampler2D map;uniform vec3 sunPos;uniform float lit,fade;varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
+${GLSL_OCC}
 void main(){
 #include <logdepthbuf_fragment>
- float a=clamp(texture2D(map,vUv).r*2.4,0.,1.);float d=lit>.5?max(dot(normalize(vN),normalize(sunPos-vP)),0.)*1.1+.02:1.;gl_FragColor=vec4(vec3(d),a*.92*fade);}`;
+ float a=clamp(texture2D(map,vUv).r*2.4,0.,1.);vec3 d=lit>.5?max(dot(normalize(vN),normalize(sunPos-vP)),0.)*1.1*shade(vP)+.02:vec3(1.);gl_FragColor=vec4(d,a*.92*fade);}`;
+// atmospheres you can see through: single scattering (Rayleigh for air, Mie with a forward lobe for haze and dust) along the view ray, 8 samples,
+// with sunlight dimmed on its way in by the Chapman airmass. Lengths are in planet radii; coefficients are per radius. Output is premultiplied,
+// so daylit sky washes out the stars behind it while the ground seen from orbit only picks up a thin blue veil.
+const SCAT={earth:{bR:[36.9,86,210.9],bM:133.8,hR:8/6371,hM:1.2/6371,g:.76,I:16,Ra:1.025},
+ mars:{bR:[67.5,46.1,19.6],bM:67.8,hR:11.1/3389.5,hM:11.1/3389.5,g:.76,I:30,Ra:1.035},
+ venus:{bR:[30,24,12],bM:60,hR:15.9/6051.8,hM:15.9/6051.8,g:.7,I:18,Ra:1.03},
+ titan:{bR:[51,31,10],bM:40,hR:40/2574.7,hM:40/2574.7,g:.6,I:28,Ra:1.12}};
+const FS_SCAT=`#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 sunPos,pc,bR;uniform float lit,R,Ra,hR,hM,bM,g,sunI;varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
+${GLSL_OCC}
+vec2 hitS(vec3 o,vec3 d,float r){float b=dot(o,d),c=dot(o,o)-r*r,h=b*b-c;if(h<0.)return vec2(-1.);h=sqrt(h);return vec2(-b-h,-b+h);}
+float am(float mu,float X){float c=sqrt(1.5708*X);return c/((c-1.)*max(mu,0.)+1.)*(1.+max(-mu,0.)*c*4.);}
+void main(){
+#include <logdepthbuf_fragment>
+ vec3 o=(cameraPosition-pc)/R,d=normalize(vP-cameraPosition),Ls=normalize(sunPos-pc);
+ vec2 ta=hitS(o,d,Ra),tp=hitS(o,d,1.);float t0=max(ta.x,0.),t1=ta.y;bool ground=tp.x>0.;if(ground)t1=min(t1,tp.x);if(t1<=t0)discard;
+ float dt=(t1-t0)/8.,odR=0.,odM=0.;vec3 sR=vec3(0.),sM=vec3(0.);
+ for(int i=0;i<8;i++){vec3 p=o+d*(t0+dt*(float(i)+.5));float r=length(p),h=max(r-1.,0.),dR=exp(-h/hR)*dt,dM=exp(-h/hM)*dt;odR+=dR;odM+=dM;
+  if(lit>.5&&hitS(p,Ls,1.).x>0.)continue;
+  float mu=dot(p/r,Ls),lR=exp(-h/hR)*hR*am(mu,r/hR),lM=exp(-h/hM)*hM*am(mu,r/hM);vec3 T=exp(-(bR*(odR+lR)+bM*1.1*(odM+lM)));sR+=T*dR;sM+=T*dM;}
+ float c=dot(d,Ls),g2=g*g,pR=.0596831*(1.+c*c),pM=.1193662*(1.-g2)*(1.+c*c)/((2.+g2)*pow(1.+g2-2.*g*c,1.5));
+ vec3 sc=lit>.5?(sR*bR*pR+sM*bM*pM)*sunI*shade(vP):(odR*bR*.08+odM*bM*.03)*sunI*.25;
+ vec3 col=1.-exp(-sc),Tv=exp(-(bR*odR+bM*1.1*odM));
+ float a=clamp(1.-dot(Tv,vec3(.3333))+(ground?0.:dot(col,vec3(.3,.59,.11))*1.6),0.,1.);gl_FragColor=vec4(col,a);}`;
+// Saturn's rings: lit from the Sun, crossed by the planet's shadow; the side facing away from the Sun only glows where light leaks through thinner rings
+const FS_RING=`#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform sampler2D map;uniform vec3 sunPos,pc,ringN;uniform float pR,lit;varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
+void main(){
+#include <logdepthbuf_fragment>
+ vec4 t=texture2D(map,vUv);if(t.a<.01)discard;vec3 L=normalize(sunPos-vP),V=normalize(cameraPosition-vP);float sh=1.,k=1.;
+ if(lit>.5){vec3 C=pc-vP;float tc=dot(C,L);if(tc>0.)sh=smoothstep(pR*.985,pR*1.015,length(C-L*tc));
+  k=dot(L,ringN)*dot(V,ringN)>0.?1.:.12+.5*(1.-t.a);}
+ gl_FragColor=vec4(t.rgb*(k*sh*1.05+.02),t.a);}`;
+// the cheap rim glow for gas giants and thin hazes
 const FS_ATMO=`#include <common>
 #include <logdepthbuf_pars_fragment>
 uniform vec3 color,sunPos;uniform float lit;varying vec3 vN;varying vec3 vP;varying vec3 vL;varying vec2 vUv;
@@ -562,18 +618,26 @@ B.forEach(b=>{
  if(b.id!=='sun'){const p=b.parent?byId[b.parent]:B[0];b.soi=(b.parent?b.a:b.el[0]*149597870.7)*Math.pow(b.GM/p.GM,.4)}
  const m=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_BODY,uniforms:{map:{value:blank},night:{value:blank},spec:{value:blank},hasNight:{value:0},hasSpec:{value:0},lit:{value:1},mode:{value:0},emissive:{value:b.kind==='star'?1:0},sunPos:{value:new THREE.Vector3()},temp:{value:new THREE.Vector3(T[0],T[1],T[2])},gsurf:{value:b.g},gcent:{value:b.gc}}});
  b.real=new THREE.Mesh(sphG,m);b.spin.add(b.real);look.mats.push(m);
- if(ATMO[b.id]){const a=ATMO[b.id],am=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_ATMO,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{color:{value:new THREE.Color(a[0],a[1],a[2])},sunPos:{value:new THREE.Vector3()},lit:{value:1}}});
-  b.atmo=new THREE.Mesh(sphG,am);b.atmo.scale.setScalar(a[3]);b.obj.add(b.atmo);look.atm.push(am)}
+ // every lit surface gets its own eclipse occluders (filled in by updateLook)
+ const occU={occ:{value:[0,1,2,3].map(()=>new THREE.Vector4())},occA:{value:[0,0,0,0]},sunR:{value:695700*KM}};b.occU=occU;Object.assign(m.uniforms,occU);
+ if(b.rings){m.defines={RINGS:1};Object.assign(m.uniforms,{ringT:{value:blank},ringN:{value:new THREE.Vector3(0,1,0)},ringC:{value:new THREE.Vector3()},ringR:{value:new THREE.Vector2(RING[0]*KM,RING[1]*KM)}})}
+ if(SCAT[b.id]){const s=SCAT[b.id],am=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_SCAT,transparent:true,depthWrite:false,blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneMinusSrcAlphaFactor,
+   uniforms:{...occU,sunPos:{value:new THREE.Vector3()},lit:{value:1},pc:{value:new THREE.Vector3()},R:{value:b.R*KM},Ra:{value:s.Ra},bR:{value:new THREE.Vector3(...s.bR)},bM:{value:s.bM},hR:{value:s.hR},hM:{value:s.hM},g:{value:s.g},sunI:{value:s.I}}});
+  b.atmo=new THREE.Mesh(sphG,am);b.atmo.scale.setScalar(s.Ra);b.atmo.renderOrder=2;b.obj.add(b.atmo);look.atm.push(am)}
+ else if(ATMO[b.id]){const a=ATMO[b.id],am=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_ATMO,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{color:{value:new THREE.Color(a[0],a[1],a[2])},sunPos:{value:new THREE.Vector3()},lit:{value:1}}});
+  b.atmo=new THREE.Mesh(sphG,am);b.atmo.scale.setScalar(a[3]);b.atmo.renderOrder=2;b.obj.add(b.atmo);look.atm.push(am)}
  if(b.id==='earth'){m.uniforms.hasNight.value=1;m.uniforms.hasSpec.value=1;
   m.uniforms.map.value=texL.load(TEX.earth);m.uniforms.night.value=texL.load(TEX.night);m.uniforms.spec.value=texL.load(TEX.spec);
-  const cm=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_CLOUD,transparent:true,depthWrite:false,uniforms:{map:{value:texL.load(TEX.clouds)},sunPos:{value:new THREE.Vector3()},lit:{value:1},fade:{value:1}}});
-  b.clouds=new THREE.Mesh(sphG,cm);b.clouds.scale.setScalar(1.004);b.spin.add(b.clouds);look.atm.push(cm)}
+  const cm=new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_CLOUD,transparent:true,depthWrite:false,uniforms:{...occU,map:{value:texL.load(TEX.clouds)},sunPos:{value:new THREE.Vector3()},lit:{value:1},fade:{value:1}}});
+  b.clouds=new THREE.Mesh(sphG,cm);b.clouds.renderOrder=1;b.clouds.scale.setScalar(1.004);b.spin.add(b.clouds);look.atm.push(cm)}
  else if(b.id==='moon')m.uniforms.map.value=b.proc=texL.load(TEX.moon);
  else look.queue.push(b);
  [m.uniforms.map.value,m.uniforms.night.value].forEach(t=>{if(t!==blank)t.anisotropy=renderer.capabilities.getMaxAnisotropy()});
  if(b.rings){const r0=RING[0]/b.R,r1=RING[1]/b.R,g=new THREE.RingGeometry(r0,r1,256,1),p=g.attributes.position,uv=g.attributes.uv;
   for(let i=0;i<p.count;i++){const r=Math.hypot(p.getX(i),p.getY(i));uv.setXY(i,(r-r0)/(r1-r0),.5)}g.rotateX(-Math.PI/2);
-  b.ringReal=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:ringTex(),transparent:true,side:THREE.DoubleSide,depthWrite:false}));b.obj.children[0].add(b.ringReal)}
+  const rt=ringTex();m.uniforms.ringT.value=rt;
+  b.ringReal=new THREE.Mesh(g,new THREE.ShaderMaterial({vertexShader:VS,fragmentShader:FS_RING,transparent:true,side:THREE.DoubleSide,depthWrite:false,
+   uniforms:{map:{value:rt},sunPos:{value:new THREE.Vector3()},lit:{value:1},pc:m.uniforms.ringC,ringN:m.uniforms.ringN,pR:{value:b.R*KM}}}));b.ringReal.renderOrder=1;b.obj.children[0].add(b.ringReal)}
 });
 const sunB=byId.sun;sunB.glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex([[0,'rgba(255,250,230,1)'],[.12,'rgba(255,220,150,.9)'],[.3,'rgba(255,170,70,.28)'],[.6,'rgba(255,120,40,.07)'],[1,'rgba(255,100,30,0)']]),blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
 sunB.glow.scale.setScalar(16);sunB.obj.add(sunB.glow);
@@ -597,7 +661,7 @@ function updateMaps(now){if(now-MP.t<250)return;MP.t=now;if(look.view!=='real')r
   // show the sharpest wanted map that has arrived; a sharper one already showing stays until it is evicted
   const cur=b.mapLv??-1;let best=-1;for(let lv=want;lv>=0;lv--)if(mapFile(L[lv]).st===2){best=lv;break}
   if(cur>best&&mapFile(L[cur]).st===2)best=cur;if(best!==cur)mapShow(b,best)}
- if(byId.saturn.ringReal&&!MP.ring&&mapFile('saturn-2k.jpg').st>0){MP.ring=1;texL.load('data/tex/saturn-ring.png',t=>{byId.saturn.ringReal.material.map=t;byId.saturn.ringReal.material.needsUpdate=true})}
+ if(byId.saturn.ringReal&&!MP.ring&&mapFile('saturn-2k.jpg').st>0){MP.ring=1;texL.load('data/tex/saturn-ring.png',t=>{byId.saturn.ringReal.material.uniforms.map.value=t;byId.saturn.real.material.uniforms.ringT.value=t})}
  // keep GPU memory bounded: drop the least recently wanted maps beyond the budget, falling back to the next sharpest one
  for(const big of [true,false]){const ld=Object.values(MP.f).filter(m=>m.st===2&&m.big===big).sort((a,b)=>a.used-b.used),cap=big?MP.keep4:MP.keep2;
   for(const m of ld.slice(0,Math.max(0,ld.length-cap))){if(m.used===now)continue;
@@ -701,8 +765,20 @@ function pullAt(p){gA.set(0,0,0);let top=null,ta=0,phi=0;for(const b of ALL){if(
 function herePoint(){return ship.on?ship.pos:w0.copy(camera.position).add(origin)}
 function updatePull(){const p=pullAt(herePoint());
  $('#lg-here').innerHTML='<dt>Pull here</dt><dd>'+fmtA(p.a)+'</dd><dt>Strongest</dt><dd>'+p.top.name+' '+Math.round(Math.min(100,p.ta/p.a*100))+'%</dd><dt>Escape speed</dt><dd>'+p.ve.toPrecision(3)+' km/s</dd>'}
+// eclipse occluders for each world: family members (parent, siblings, moons) lying sunward of it within reach of its shadow, nearest four
+B.forEach(b=>{b.fam=B.filter(c=>c!==b&&c.kind!=='star'&&(c.parent===b.id||b.parent===c.id||(!!b.parent&&c.parent===b.parent)))});
+const oL=new THREE.Vector3(),oR=new THREE.Vector3(),oN=new THREE.Vector3();
+function pickOcc(b){const u=b.occU;if(!u)return;const P=b.obj.position;oL.subVectors(B[0].obj.position,P);const ds=oL.length();oL.divideScalar(ds);const hit=[];
+ for(const c of b.fam){if(!c.obj.visible)continue;oR.subVectors(c.obj.position,P);const t=oR.dot(oL);if(t<=0)continue;
+  if(oR.addScaledVector(oL,-t).length()<(c.R+b.R)*KM+695700*KM*t/ds)hit.push([t,c])}
+ hit.sort((a,c)=>a[0]-c[0]);for(let i=0;i<4;i++){const c=hit[i]&&hit[i][1];if(c){u.occ.value[i].set(c.obj.position.x,c.obj.position.y,c.obj.position.z,c.R*KM);u.occA.value[i]=SCAT[c.id]?1:0}else u.occ.value[i].w=0}}
 function updateLook(){const s=B[0].loc;for(const m of look.mats){m.uniforms.sunPos.value.copy(s);m.uniforms.lit.value=look.lit?1:0}
  for(const m of look.atm){m.uniforms.sunPos.value.copy(s);m.uniforms.lit.value=look.lit?1:0}
+ for(const b of B){if(b.kind!=='star')pickOcc(b);
+  // scattering shells: centre, and which faces to draw (back faces once the camera is inside the air)
+  if(b.atmo&&SCAT[b.id]){const u=b.atmo.material.uniforms;u.pc.value.copy(b.obj.position);b.atmo.material.side=b.obj.position.distanceTo(camera.position)<b.R*KM*SCAT[b.id].Ra?THREE.BackSide:THREE.FrontSide}}
+ const sat=byId.saturn;if(sat.ringReal){const u=sat.real.material.uniforms;u.ringC.value.copy(sat.obj.position);u.ringN.value.set(0,1,0).applyQuaternion(sat.obj.children[0].quaternion);
+  const r=sat.ringReal.material.uniforms;r.sunPos.value.copy(s);r.lit.value=look.lit?1:0}
  if(byId.earth.clouds)byId.earth.clouds.rotation.y=(sim/864e5*.06)%TAU}
 
 /* labels */
