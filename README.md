@@ -33,6 +33,8 @@ A real-universe explorer in one HTML page plus a `data/` folder. Every planet, m
 | Orbit / zoom the chase camera | Drag / scroll | Drag / scroll |
 | Reset camera | Home | Home |
 
+Launch puts you in a low orbit around the world you are looking at (Earth from the solar-system view). Holding W builds the engine up from the set thrust to about a thousand times it over a few seconds; P flies to the target and speeds time up on its own, so Earth to Mars takes about half a minute, then eases back to real time for the arrival. The yellow line is your predicted path under gravity.
+
 Outside the ship: drag to orbit, scroll to zoom (it speeds up the farther out you are), double-click any world to fly there, Home to reframe.
 
 ## Publish on GitHub Pages
