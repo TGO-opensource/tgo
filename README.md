@@ -1,8 +1,8 @@
 # TGO: The Ghuman Orrery
 
-A real-universe explorer in one HTML file. Every planet, moon, star and spacecraft sits where it really is for the date on the clock, and everything is clickable. No procedural content: what you see comes from published data.
+A real-universe explorer in one HTML page plus a small `data/` folder. Every planet, moon, star and spacecraft sits where it really is for the date on the clock, and everything is clickable. No procedural content: what you see comes from published data.
 
-**Open it:** after enabling GitHub Pages, TGO lives at `https://<your-user>.github.io/<repo>/`.
+**Open it:** after enabling GitHub Pages, TGO lives at `https://<your-user>.github.io/<repo>/`. To run it locally, serve the folder with any static web server (for example `python -m http.server`) and open `http://localhost:8000/`. Opening `index.html` straight from disk does not work, because browsers block it from loading the files in `data/`.
 
 ## What it does
 
@@ -32,7 +32,7 @@ A real-universe explorer in one HTML file. Every planet, moon, star and spacecra
 
 ## Publish on GitHub Pages
 
-1. Create a public repository and upload `index.html`, `README.md`, `LICENSE` and `.nojekyll`.
+1. Create a public repository and upload `index.html`, the `data/` folder, `README.md`, `LICENSE` and `.nojekyll`.
 2. Settings → Pages → Source: *Deploy from a branch*, branch `main`, folder `/ (root)`.
 3. Your link appears on the same page within a minute or two.
 
@@ -41,14 +41,15 @@ A real-universe explorer in one HTML file. Every planet, moon, star and spacecra
 - Star catalog: [HYG Database v3.8](https://github.com/astronexus/HYG-Database) (Hipparcos, Yale Bright Star, Gliese), **CC BY-SA 4.0**. Star radii and masses are measured values for well-known stars and estimates from colour and brightness for the rest.
 - Planet elements: E. M. Standish, JPL *Approximate Positions of the Planets*. Moon: J. Meeus, *Astronomical Algorithms*, ch. 47. Satellites: JPL planetary satellite mean elements. Rotation: IAU WGCCRE models.
 - Coastlines and borders: Natural Earth (public domain).
-- Earth and Moon imagery: **confirm the source and licence of the embedded textures before release.**
+- Earth and Moon imagery (`data/*.jpg`): **confirm the source and licence of these textures before release.**
+- Close-up Earth imagery: NASA [GIBS](https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api) *Blue Marble: Shaded Relief and Bathymetry*, streamed as tiles when the camera is within a few Earth radii. Only tiles on screen load, sharpening to about 500 m per pixel. NASA imagery is public domain; no API key is needed.
 - Rendering: [three.js](https://threejs.org) r128 (MIT).
 
 ## Roadmap
 
 Done: ships and flight, autopilot at 1c and 5c, HUD, real moon ephemerides, extended date range, real stars, spacecraft positions, more places, open-source packaging.
 
-Next: known exoplanets around nearby stars, asteroids and comets from JPL orbital elements, spacecraft trajectories from JPL Horizons, and tiled surface imagery so zooming into a city shows real streets rather than a single global map.
+Next: known exoplanets around nearby stars, asteroids and comets from JPL orbital elements, spacecraft trajectories from JPL Horizons, sharper tiled imagery than Blue Marble’s 500 m so zooming into a city shows real streets, and streamed imagery for the Moon and Mars.
 
 ## Licence
 
