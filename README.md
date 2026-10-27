@@ -29,6 +29,10 @@ A real-universe explorer in one HTML page plus a small `data/` folder. Every pla
 | Switch flight model | N | N |
 | Time warp | , and . | , and . |
 | Camera (chase, cockpit, free look) | C | C |
+| Orbit / zoom the chase camera | Drag / scroll | Drag / scroll |
+| Reset camera | Home | Home |
+
+Outside the ship: drag to orbit, scroll to zoom (it speeds up the farther out you are), double-click any world to fly there, Home to reframe. Real spacecraft start at 1 g so they actually move; tick *Realistic thrust* in the ship panel to fly on their real engines.
 
 ## Publish on GitHub Pages
 
