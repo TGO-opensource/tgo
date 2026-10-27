@@ -1,6 +1,6 @@
 # Builds the web-size maps in data/tex/ from the full-size downloads in tools/raw/ (see README, "Rebuilding the data").
 # Bicubic resampling; JPEG quality 85; PNG for the ring strip so its alpha survives.
-param([string]$Raw = (Join-Path $PSScriptRoot 'raw'), [string]$Out = (Join-Path $PSScriptRoot '..\data\tex'))
+param([string]$Raw = (Join-Path $PSScriptRoot 'raw'), [string]$Out = (Join-Path $PSScriptRoot '..\data\tex'), [string[]]$Only)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -8,6 +8,7 @@ $jpeg = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object Mime
 $q = [Drawing.Imaging.EncoderParameters]::new(1); $q.Param[0] = [Drawing.Imaging.EncoderParameter]::new([Drawing.Imaging.Encoder]::Quality, [long]85)
 
 function Resize([string]$src, [string]$dst, [int]$w, [int]$h) {
+  if ($Only -and $dst -notin $Only) { return }   # -Only earth-2k.jpg,... rebuilds just those files
   $img = [Drawing.Image]::FromFile((Resolve-Path (Join-Path $Raw $src)))
   try {
     $bmp = [Drawing.Bitmap]::new($w, $h, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
@@ -39,7 +40,12 @@ Resize 'sss\2k_saturn.jpg'           'saturn-2k.jpg'   2048 1024
 Resize 'sss\8k_saturn.jpg'           'saturn-4k.jpg'   4096 2048
 Resize 'sss\2k_uranus.jpg'           'uranus-2k.jpg'   2048 1024
 Resize 'sss\2k_neptune.jpg'          'neptune-2k.jpg'  2048 1024
-Resize 'sss\2k_moon.jpg'             'moon-2k.jpg'     2048 1024
+Resize 'sss\8k_earth_daymap.jpg'    'earth-2k.jpg'        2048 1024
+Resize 'sss\8k_earth_daymap.jpg'    'earth-4k.jpg'        4096 2048
+Resize 'sss\8k_earth_nightmap.jpg'  'earth-night-2k.jpg'  2048 1024
+Resize 'sss\8k_earth_clouds.jpg'    'earth-clouds-2k.jpg' 2048 1024
+Resize 'sss\8k_earth_clouds.jpg'    'earth-clouds-4k.jpg' 4096 2048
+Resize 'sss\2k_moon.jpg'           'moon-2k.jpg'     2048 1024
 Resize 'sss\8k_moon.jpg'             'moon-4k.jpg'     4096 2048
 Resize 'sss\8k_saturn_ring_alpha.png' 'saturn-ring.png' 2048 16
 Resize 'sss\8k_stars_milky_way.jpg'  'milkyway-4k.jpg' 4096 2048
