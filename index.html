@@ -176,15 +176,16 @@ body[data-view="wire"] .lb em{color:var(--g2)}
  <header><h2 id="ps-name">Ship</h2><button class="mn" aria-expanded="true" aria-label="Minimize panel">–</button></header>
  <div class="bd">
   <div id="ap" hidden>
-   <div class="row" role="group" aria-label="Flight model"><button class="btn" data-fm="free" aria-pressed="true">Free</button><button class="btn" data-fm="newton" aria-pressed="false">Newtonian</button><button class="btn" data-fm="cruise" aria-pressed="false">Cruise</button></div>
+   <div class="row" role="group" aria-label="Flight model"><button class="btn" data-fm="free" aria-pressed="true">Free</button><button class="btn" data-fm="newton" aria-pressed="false">Ship</button></div>
    <div id="nw-opts"><div class="rng" style="margin-top:4px"><span>Thrust</span><input type="range" id="thrust" min="-4" max="2.5" step="0.05" value="0" aria-label="Engine acceleration, logarithmic"><span id="thrv" style="min-width:64px;text-align:right">1 g</span></div>
     <label class="ck"><input type="checkbox" id="l-realthr">Realistic thrust</label>
     <p class="note" id="nw-rated" style="margin:0 0 4px"></p>
-    <div class="row"><button class="btn" id="b-match">Match (X)</button><button class="btn" id="b-orbit">Orbit (O)</button><button class="btn" id="b-land">Land (L)</button></div></div>
-   <div class="rng" style="margin-top:6px"><span>Top speed</span><input type="range" id="mult" min="1" max="10" step="1" value="1" aria-label="Ship top speed in multiples of light speed"><span id="multv" style="min-width:28px;text-align:right">1c</span></div>
+    <div class="row"><button class="btn" id="b-match">Match (X)</button><button class="btn" id="b-orbit">Orbit (O)</button><button class="btn" id="b-land">Land (L)</button></div>
+    <p class="note" style="margin:8px 0 4px">Warp drive (G). Its speed falls near worlds; keys 1 to 5 cap it.</p>
+    <div class="row"><button class="btn" id="b-warp" aria-pressed="false">Warp (G)</button><button class="btn" data-wp="1" aria-pressed="false">1c</button><button class="btn" data-wp="2" aria-pressed="false">10c</button><button class="btn" data-wp="3" aria-pressed="false">1,000c</button><button class="btn" data-wp="4" aria-pressed="false">1 AU/s</button><button class="btn" data-wp="5" aria-pressed="false">No cap</button></div></div>
+   <div class="rng" hidden><span>Top speed</span><input type="range" id="mult" min="1" max="10" step="1" value="1" aria-label="Ship top speed in multiples of light speed"><span id="multv">1c</span></div>
    <div class="row"><button class="btn" id="apGo" aria-pressed="false">Autopilot</button><button class="btn" id="sjump">Jump</button></div>
-   <div id="cr-opts"><p class="note" style="margin:8px 0 4px">Cruise speed (keys 0 to 5)</p>
-   <div class="row cr"><button class="btn" data-cr="0" aria-pressed="false">Stop</button><button class="btn" data-cr="1" aria-pressed="false">10 km/s</button><button class="btn" data-cr="2" aria-pressed="false">1,000 km/s</button><button class="btn" data-cr="3" aria-pressed="false">0.1c</button><button class="btn" data-cr="4" aria-pressed="false">1c</button><button class="btn" data-cr="5" aria-pressed="false">5c</button></div></div>
+   <div id="cr-opts" hidden></div>
    <label class="ck" style="margin-top:6px"><input type="checkbox" id="l-rel" checked>Relativistic view</label>
    <p class="note">Pick a body in Fly me to, or double-click one, to make it your target.</p>
    <div class="row" style="margin-top:6px"><button class="btn" id="leave">Leave ship</button></div>

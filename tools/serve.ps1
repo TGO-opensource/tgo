@@ -3,7 +3,7 @@
 # PUT /upload/<name> saves the request body to tools/raw/<name>; the data build uses it to bring in JSON fetched in a browser.
 param([int]$Port = 8765, [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')))
 $raw = Join-Path $PSScriptRoot 'raw'
-$types = @{ '.html' = 'text/html; charset=utf-8'; '.js' = 'text/javascript'; '.css' = 'text/css'; '.json' = 'application/json'; '.png' = 'image/png'; '.jpg' = 'image/jpeg'; '.svg' = 'image/svg+xml'; '.bin' = 'application/octet-stream'; '.gz' = 'application/gzip'; '.md' = 'text/plain; charset=utf-8' }
+$types = @{ '.html' = 'text/html; charset=utf-8'; '.js' = 'text/javascript'; '.css' = 'text/css'; '.json' = 'application/json'; '.png' = 'image/png'; '.jpg' = 'image/jpeg'; '.svg' = 'image/svg+xml'; '.bin' = 'application/octet-stream'; '.gz' = 'application/gzip'; '.md' = 'text/plain; charset=utf-8'; '.glb' = 'model/gltf-binary'; '.gltf' = 'model/gltf+json'; '.wasm' = 'application/wasm' }
 $l = [System.Net.HttpListener]::new(); $l.Prefixes.Add("http://localhost:$Port/"); $l.Start()
 Write-Host "Serving $Root on http://localhost:$Port/"
 while ($l.IsListening) {

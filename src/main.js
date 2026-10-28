@@ -2,6 +2,11 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {createHDR} from "./render/hdr.js";
+import {FLEET} from "./ships/fleet.js";
+import {loadModel} from "./ships/models.js";
+import {glowMats} from "./ships/tgo.js";
+import {makePlume,setPlume} from "./ships/plume.js";
+import {createEnv} from "./ships/env.js";
 import {D2R,TAU,AU,KM,CKM,G,J2000} from "./core/units.js";
 import {B,byId,PL1,PL2,MEL,POLE,OBL,eqToScene,poleQuat,moonPos,moonNode,moonPlane} from "./data/solar.js";
 import {COAST,BORDERS} from "./data/coast.js";
@@ -629,7 +634,8 @@ varying vec3 vC;void main(){
  const pts=new THREE.Points(g,mat);pts.frustumCulled=false;pts.renderOrder=-1;scene.add(pts);
  return {glow,pts,mat,p,t,sz,col,pa,ta,sa}})();
 function updateSky(){const on=opt.stars;sky.pts.visible=on;sky.glow.visible=on&&look.view!=='wire'&&!!sky.glow.material.uniforms.map.value;sky.pts.position.copy(camera.position);sky.glow.position.copy(camera.position);
- const k=ship.on&&opt.rel&&ship.mode!=='free'?ship.v/(CKM*KM):0,beta=Math.min(.985,k*.9);sky.mat.uniforms.beta.value=beta;if(ship.on)sky.mat.uniforms.vdir.value.copy(ship.mv);}
+ const W=ship.warp,wl=!ship.on||W.st==='off'?0:W.st==='spool'?W.t/2*.3:W.st==='on'?.3+.05*Math.min(1,W.t):.3*(1-W.t/.8);
+ const k=ship.on&&opt.rel&&ship.mode!=='free'&&W.st==='off'?ship.v/(CKM*KM):0,beta=wl>0?Math.max(0,wl):Math.min(.985,k*.9);sky.mat.uniforms.beta.value=beta;if(ship.on)sky.mat.uniforms.vdir.value.copy(ship.mv);}
 
 /* ships */
 const V3=THREE.Vector3,w0=new V3(),w3=new V3(),sdir=new V3(),fwd=new V3(),up=new V3(),ZERO=new V3(),tgt=new V3();
@@ -638,8 +644,13 @@ const shipScene=new THREE.Scene(),shipCam=new THREE.PerspectiveCamera(45,innerWi
 const shipLine=new THREE.LineBasicMaterial({color:0x3dff8a});
 const shipOcc=new THREE.MeshBasicMaterial({color:0x000000,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
 const shipMetal=new THREE.MeshStandardMaterial({color:0x9aa3ad,metalness:.2,roughness:.55,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}),shipMeshes=[];
-const sunL=new THREE.DirectionalLight(0xfff4e0,1.25),shipAmb=new THREE.AmbientLight(0x6f86a8,.05);shipScene.add(sunL,shipAmb);
-function shipLook(v){const w=v==='wire';shipMeshes.forEach(m=>m.material=w?shipOcc:shipMetal);shipLine.color.setHex(w?0x3dff8a:0x2a3138)}
+const sunL=new THREE.DirectionalLight(0xfff4e0,1.25),shipAmb=new THREE.AmbientLight(0x6f86a8,.02);shipScene.add(sunL,sunL.target,shipAmb);
+if(!LOW){renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;sunL.castShadow=true;sunL.shadow.mapSize.set(2048,2048)}
+const env=createEnv(renderer,scene,shipScene,{low:LOW});
+const shipWire=new THREE.MeshBasicMaterial({color:0x3dff8a,wireframe:true,transparent:true,opacity:.35});
+function wireSwap(root,w){root.traverse(o=>{if(!o.isMesh||o.userData.noWire)return;if(w){if(!o.userData.mat)o.userData.mat=o.material;o.material=shipWire}else if(o.userData.mat)o.material=o.userData.mat})}
+function shipLook(v){const w=v==='wire';shipMeshes.forEach(m=>m.material=w?shipOcc:shipMetal);shipLine.color.setHex(w?0x3dff8a:0x2a3138);
+ SHIPS.forEach(d=>{if(d.obj)wireSwap(d.obj,w)});PROBES.forEach(p=>{if(p.obj&&p.glb)wireSwap(p.obj,w)})}
 const plumeM=new THREE.MeshBasicMaterial({color:0x9fdcff,transparent:true,opacity:.5,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
 const fore=g=>g.rotateX(-Math.PI/2);
 function part(p,geo,o){o=o||{};const g=new THREE.Group();const mm=new THREE.Mesh(geo,look.view==='wire'?shipOcc:shipMetal);shipMeshes.push(mm);g.add(mm);g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo,o.th||14),shipLine));
@@ -647,54 +658,23 @@ function part(p,geo,o){o=o||{};const g=new THREE.Group();const mm=new THREE.Mesh
 function seg(p,pts){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));p.add(new THREE.LineSegments(g,shipLine))}
 function dish(r,depth,n){const pr=[];for(let k=0;k<=8;k++){const x=r*(.04+.96*k/8);pr.push(new THREE.Vector2(x,depth*x*x/(r*r)))}return fore(new THREE.LatheGeometry(pr,n||20))}
 function struts(p,r,z0,z1){const a=[];for(let k=0;k<3;k++){const t=k*TAU/3+.5;a.push(Math.cos(t)*r,Math.sin(t)*r,z0,0,0,z1)}seg(p,a)}
-const SHIPS=[
-{id:'voyager',kind:'real',name:'Voyager 1',fact:'Launched 1977. Now cruising at about 17 km/s, the farthest human-made object.',build(g){
- part(g,dish(1.83,.42,24));struts(g,1.7,-.4,-1.2);part(g,new THREE.CylinderGeometry(.14,.14,.12,8).rotateX(Math.PI/2),{p:[0,0,-1.25]});
- part(g,new THREE.CylinderGeometry(.89,.89,.47,10).rotateX(Math.PI/2),{p:[0,0,.26]});
- seg(g,[.8,0,.3,3.1,0,.75]);part(g,new THREE.BoxGeometry(.5,.45,.55),{p:[3.35,0,.8]});
- seg(g,[-.8,0,.3,-3,0,.6]);for(let k=0;k<3;k++)part(g,new THREE.CylinderGeometry(.2,.2,.5,8).rotateZ(Math.PI/2),{p:[-1.6-k*.55,0,.42+k*.06]});
- seg(g,[0,.7,.45,-1.6,10.5,5.5])}},
-{id:'apollo',kind:'real',name:'Apollo CSM',fact:'Command and service module. Apollo 10’s crew reached 11.08 km/s, the fastest humans have flown.',build(g){
- part(g,fore(new THREE.CylinderGeometry(.2,1.95,3.2,16)),{p:[0,0,-1.6]});part(g,fore(new THREE.CylinderGeometry(1.96,1.96,7.5,16)),{p:[0,0,3.75]});
- part(g,fore(new THREE.CylinderGeometry(.55,1.95,3.9,16,1,true)),{p:[0,0,9.45]});
- for(let k=0;k<4;k++){const a=k*TAU/4+TAU/8;part(g,new THREE.BoxGeometry(.3,.3,.7),{p:[Math.cos(a)*2.15,Math.sin(a)*2.15,1.4]})}
- seg(g,[0,-1.96,6.6,0,-3.3,8.1]);part(g,dish(.8,.22,12),{p:[0,-3.5,8.3]});g.userData.pl=[[1.5,9,[0,0,11.4]]]}},
-{id:'newhorizons',kind:'real',name:'New Horizons',fact:'Left Earth at 16.26 km/s in 2006, the fastest launch ever, and flew past Pluto in 2015.',build(g){
+// New Horizons has no NASA model, so it stays hand-built; it appears only as a probe you can visit
+const NH={id:'newhorizons',kind:'real',name:'New Horizons',fact:'Left Earth at 16.26 km/s in 2006, the fastest launch ever, and flew past Pluto in 2015.',build(g){
  part(g,fore(new THREE.CylinderGeometry(1.25,1.25,.7,3)),{p:[0,0,.35]});part(g,dish(1.05,.28,20));struts(g,.95,-.27,-.8);
- seg(g,[.9,-.2,.5,1.2,-.4,.5]);part(g,new THREE.CylinderGeometry(.21,.21,1.1,10).rotateZ(Math.PI/2),{p:[1.75,-.4,.5]});part(g,new THREE.BoxGeometry(.5,.35,.4),{p:[-.7,-.6,.55]})}},
-{id:'cassini',kind:'real',name:'Cassini',fact:'Orbited Saturn from 2004 to 2017 and carried ESA’s Huygens probe down to Titan.',build(g){
- part(g,dish(2,.55,24));struts(g,1.9,-.5,-1.15);part(g,new THREE.CylinderGeometry(.12,.12,.15,8).rotateX(Math.PI/2),{p:[0,0,-1.2]});
- part(g,fore(new THREE.CylinderGeometry(1,1,1.3,10)),{p:[0,0,1]});part(g,fore(new THREE.CylinderGeometry(1.25,1.25,3.2,12)),{p:[0,0,3.3]});
- part(g,fore(new THREE.CylinderGeometry(.3,.62,1.1,10)),{p:[0,0,5.45]});
- part(g,new THREE.CylinderGeometry(.45,1.35,.55,18).rotateZ(Math.PI/2),{p:[1.6,0,3.1]});
- for(const a of[2.1,3.3,4.5]){part(g,fore(new THREE.CylinderGeometry(.22,.22,1.1,8)),{p:[Math.cos(a)*1.85,Math.sin(a)*1.85,4.4]});seg(g,[Math.cos(a)*1.2,Math.sin(a)*1.2,4.4,Math.cos(a)*1.75,Math.sin(a)*1.75,4.4])}
- seg(g,[0,1,1.1,0,11,1.4]);g.userData.pl=[[.45,3,[0,0,6]]]}},
-{id:'parker',kind:'real',name:'Parker Solar Probe',fact:'Passed 6.1 million km from the Sun’s surface on 24 December 2024 at about 192 km/s, the fastest object humans have built.',build(g){
- part(g,fore(new THREE.CylinderGeometry(1.15,1.15,.115,28)),{p:[0,0,-1.45]});
- const tr=[];for(let k=0;k<6;k++){const a=k*TAU/6;tr.push(Math.cos(a)*.95,Math.sin(a)*.95,-1.38,Math.cos(a)*.62,Math.sin(a)*.62,-.62)}seg(g,tr);
- part(g,fore(new THREE.CylinderGeometry(.7,.7,1.4,6)),{p:[0,0,.1]});
- for(const s of[-1,1]){part(g,new THREE.BoxGeometry(.95,.03,.55),{p:[s*1.25,0,.25]});seg(g,[s*.7,0,.25,s*.78,0,.25])}
- part(g,dish(.3,.1,12),{p:[0,-.85,.5]});seg(g,[0,.7,.2,0,2.6,1.5])}},
-{id:'kestrel',kind:'tgo',name:'TGO Kestrel',fact:'TGO original. A 23 m two-seat interceptor built for fast hops between worlds.',build(g){
- part(g,fore(new THREE.CylinderGeometry(.12,1.5,14,8)),{p:[0,0,-4]});part(g,new THREE.BoxGeometry(3.4,1.7,8),{p:[0,0,7]});
- part(g,new THREE.SphereGeometry(1,10,5,0,TAU,0,Math.PI/2).scale(.85,.65,2.4),{p:[0,.6,-3]});
- const s=new THREE.Shape();s.moveTo(1.3,-1);s.lineTo(11,8.5);s.lineTo(11,10.5);s.lineTo(1.3,10.5);s.closePath();
- const w=new THREE.ExtrudeGeometry(s,{depth:.3,bevelEnabled:false});w.rotateX(Math.PI/2);w.translate(0,.15,0);part(g,w);part(g,w.clone().scale(-1,1,1));
- for(const x of[-11,11])part(g,new THREE.BoxGeometry(.25,2.6,2.8),{p:[x,1.3,9.3]});
- for(const x of[-1.7,1.7])part(g,fore(new THREE.CylinderGeometry(.85,1.05,5,10)),{p:[x,0,9]});
- g.userData.pl=[[.85,7,[-1.7,0,11.5]],[.85,7,[1.7,0,11.5]]]}},
-{id:'wayfarer',kind:'tgo',name:'TGO Wayfarer',fact:'TGO original. A 340 m long-haul cruiser with a spinning habitat ring for its crew.',build(g){
- part(g,fore(new THREE.CylinderGeometry(5,5,260,10)));part(g,fore(new THREE.CylinderGeometry(4,15,40,10)),{p:[0,0,-150]});
- const ring=new THREE.Group();ring.position.z=-60;g.add(ring);part(ring,new THREE.TorusGeometry(70,7,6,48),{th:20});
- const sp=[];for(let k=0;k<6;k++){const a=k*TAU/6;sp.push(Math.cos(a)*5,Math.sin(a)*5,0,Math.cos(a)*63,Math.sin(a)*63,0)}seg(ring,sp);
- for(const x of[-62,62])part(g,new THREE.BoxGeometry(80,1,50),{p:[x,0,25]});
- for(let k=0;k<4;k++){const a=k*TAU/4+TAU/8;part(g,fore(new THREE.CylinderGeometry(9,9,60,10)),{p:[Math.cos(a)*16,Math.sin(a)*16,90]})}
- part(g,fore(new THREE.CylinderGeometry(10,30,40,16,1,true)),{p:[0,0,150]});g.userData.pl=[[26,110,[0,0,170]]];g.userData.spin=ring}}];
-function makeShip(def){if(def.obj)return;const o=new THREE.Group(),g=new THREE.Group();g.scale.setScalar(1e-6);o.add(g);def.build(g);
- o.updateMatrixWorld(true);def.size=new THREE.Box3().setFromObject(o).getSize(new V3()).length()/2;
- def.plumes=(g.userData.pl||[]).map(([r,l,p])=>{const geo=new THREE.ConeGeometry(r,l,14,1,true);geo.rotateX(Math.PI/2);geo.translate(0,0,l/2);
-  const m=new THREE.Mesh(geo,plumeM);m.position.set(p[0],p[1],p[2]);m.visible=false;g.add(m);return m});
- def.spin=g.userData.spin||null;def.obj=o;o.visible=false;shipScene.add(o)}
+ seg(g,[.9,-.2,.5,1.2,-.4,.5]);part(g,new THREE.CylinderGeometry(.21,.21,1.1,10).rotateZ(Math.PI/2),{p:[1.75,-.4,.5]});part(g,new THREE.BoxGeometry(.5,.35,.4),{p:[-.7,-.6,.55]})}};
+const SHIPS=FLEET;
+function makeShip(def){if(def.obj)return;const o=new THREE.Group(),g=new THREE.Group();g.scale.setScalar(1e-6);o.add(g);
+ Object.assign(def,{size:def.len*.5e-6*1.2,plumes:[],lights:[],spin:null,cockpit:null,mount:null,dash:null,ready:false});
+ const addPlumes=list=>{def.plumes=list.map(([r,l,p,k])=>{const m=makePlume(r,l,k);m.position.set(p[0],p[1],p[2]);m.userData.noWire=true;g.add(m);return m})};
+ if(def.build){def.build(g);const U=g.userData,bx=new THREE.Box3().setFromObject(g);def.size=bx.getSize(new V3()).length()/2;addPlumes(U.pl||[]);
+  Object.assign(def,{lights:U.lights||[],spin:U.spin||null,cockpit:U.cockpit||null,mount:U.mount||null,dash:U.dash||null,ready:true})}
+ else{const L=def.len,ph=new THREE.Mesh(new THREE.BoxGeometry(L*.4,L*.25,L*.6),new THREE.MeshStandardMaterial({color:0x50555c,roughness:.8,transparent:true,opacity:.4}));g.add(ph);
+  loadModel(def).then(m=>{g.remove(ph);ph.geometry.dispose();const bx=m.userData.box,sz=bx.getSize(new V3());g.add(m);
+   def.size=sz.length()/2*1e-6;if(def.plume)addPlumes([[def.plume[0],def.plume[1],[0,0,bx.max.z],def.plume[2]]]);
+   def.mount=[0,bx.max.y*.3,bx.min.z-.4];def.ready=true;if(look.view==='wire')wireSwap(m,true);
+   if(ship.on&&ship.def===def){ship.chase=ship.chaseT=def.size*3.6;env.update(performance.now(),true)}})
+  .catch(e=>{console.warn(e);flash('Could not load the '+def.name+' model; check your connection.')})}
+ def.obj=o;o.visible=false;shipScene.add(o)}
 
 const DN=420,dustP=new Float32Array(DN*3).map(()=>Math.random()*2-1),dustA=new THREE.BufferAttribute(new Float32Array(DN*6),3);dustA.setUsage(THREE.DynamicDrawUsage);
 const dustG=new THREE.BufferGeometry();dustG.setAttribute('position',dustA);
@@ -824,8 +804,9 @@ const PROBES=[
  {id:'v2',name:'Voyager 2',ship:'voyager',lon:289.6,lat:-35,r0:138.4,rate:3.24,launch:'20 Aug 1977',v:15.3,from:2012,note:'The only spacecraft to visit Uranus and Neptune. Crossed the heliopause in November 2018.'},
  {id:'nh',name:'New Horizons',ship:'newhorizons',lon:289,lat:1.5,r0:60.6,rate:2.89,launch:'19 Jan 2006',v:13.7,from:2016,note:'Flew past Pluto on 14 July 2015 and Arrokoth on 1 January 2019.'}];
 const probeSun=new THREE.DirectionalLight(0xfff4e0,1.25);const probeAmb=new THREE.AmbientLight(0x6f86a8,.05);scene.add(probeSun,probeSun.target,probeAmb);
-PROBES.forEach(pr=>{const def=SHIPS.find(s=>s.id===pr.ship),o=new THREE.Group(),g=new THREE.Group();g.scale.setScalar(1e-6);o.add(g);def.build(g);
- o.updateMatrixWorld(true);const size=new THREE.Box3().setFromObject(o).getSize(new V3()).length()/2;
+PROBES.forEach(pr=>{const def=pr.ship==='newhorizons'?NH:SHIPS.find(s=>s.id===pr.ship),o=new THREE.Group(),g=new THREE.Group();g.scale.setScalar(1e-6);o.add(g);
+ let size;if(def.model){size=def.len*.5e-6;pr.glb=true;loadModel(def).then(m=>{const c=m.clone();g.add(c);if(look.view==='wire')wireSwap(c,true)})}
+ else{def.build(g);o.updateMatrixWorld(true);size=new THREE.Box3().setFromObject(o).getSize(new V3()).length()/2}
  Object.assign(pr,{kind:'probe',R:size/KM,GM:0,g:0,pos:new V3(),loc:new V3(),obj:o,rot:1});scene.add(o);
  const el=document.createElement('button');el.className='lb probe';el.innerHTML='<i></i><span>'+pr.name+'</span><em></em>';el.addEventListener('click',()=>pick(pr));labelsEl.appendChild(el);pr.lb=el;ALL.push(pr)});
 function probePos(){const yr=2000+(sim-J2000)/(864e5*365.25),D=(sim-Date.UTC(2025,0,1))/(864e5*365.25);
@@ -943,7 +924,7 @@ B.forEach(b=>{b.li.parentNode.dataset.n=b.name.toLowerCase();b.li.parentNode.dat
 function filterList(v){list.querySelectorAll('li').forEach(li=>{li.style.display=li.classList.contains('hd')?(v?'none':''):(v?li.dataset.n.includes(v):li.dataset.d==='1')?'':'none'})}
 
 /* flight */
-const ship={on:false,def:null,pos:new V3(),q:new THREE.Quaternion(),v:0,thr:0,ap:null,mult:1,anchor:null,off:new V3(),target:null,cam:'chase',chase:1,chaseT:1,cy:0,cyT:0,cp:0,cpT:0,av:new V3(),avT:new V3(),rated:9.80665,restore:null,msg:'',msgT:0,mv:new V3(0,0,-1),stop:false,fov:45,mode:'free',fs:0,fk:.5,fdir:new V3(0,0,-1),kick:0,vel:new V3(),vr:new V3(),vb:null,acc:9.80665,land:null,hold:null,ref:null,tf:0,warpCapS:1e12,capP:1e12,warpLim:false,drag:0};
+const ship={on:false,def:null,pos:new V3(),q:new THREE.Quaternion(),v:0,thr:0,ap:null,mult:1,anchor:null,off:new V3(),target:null,cam:'chase',chase:1,chaseT:1,cy:0,cyT:0,cp:0,cpT:0,av:new V3(),avT:new V3(),rated:9.80665,restore:null,msg:'',msgT:0,mv:new V3(0,0,-1),stop:false,fov:45,mode:'free',warp:{st:'off',t:0,v:0,k:1,lim:Infinity},fs:0,fk:.5,fdir:new V3(0,0,-1),kick:0,vel:new V3(),vr:new V3(),vb:null,acc:9.80665,land:null,hold:null,ref:null,tf:0,warpCapS:1e12,capP:1e12,warpLim:false,drag:0};
 const keys={},mouse={x:0,y:0,down:false,sx:0,sy:0,lx:0,ly:0},qo=new THREE.Quaternion(),eo=new THREE.Euler();
 const K=(...c)=>c.some(k=>keys[k]);
 const arriveR=b=>Math.max(b.R*KM*(b.kind==='star'?4:3),ship.def?ship.def.size*4:0);
@@ -963,10 +944,13 @@ function go(b,d1,dir){zm.t=null;if(travel==='jump'){jumpFX(()=>{fly=null;focus=b
  else flyTo(b,d1,dir)}
 function pick(b){if(ship.on)setTarget(b);else{stopTour();curSite=null;$('#i-site').textContent=b.note||'';go(b)}}
 function setTarget(b){ship.target=b;focus=b;setFocusUI(b);if(ship.ap&&ship.ap.to&&ship.ap.to!==b&&(!ship.ap.mode||ship.ap.mode==='go')){ship.ap=Object.assign({},ship.ap,{to:b,t0:performance.now()});flash('Autopilot retargeted to '+b.name)}apUI()}
-function apUI(){['circ','land','match'].forEach(m=>{const e=$('#b-'+(m==='circ'?'orbit':m));if(e)e.setAttribute('aria-pressed',String(!!(ship.ap&&ship.ap.mode===m)))});const g=$('#apGo');g.textContent=ship.ap?'Stop autopilot':'Autopilot to '+(ship.target?ship.target.name:'…');g.setAttribute('aria-pressed',String(!!ship.ap));
+function apUI(){{const w=$('#b-warp');if(w&&ship.warp){w.setAttribute('aria-pressed',String(ship.warp.st!=='off'));w.textContent=ship.warp.st==='off'?'Warp (G)':'Drop out (G)'}}['circ','land','match'].forEach(m=>{const e=$('#b-'+(m==='circ'?'orbit':m));if(e)e.setAttribute('aria-pressed',String(!!(ship.ap&&ship.ap.mode===m)))});const g=$('#apGo');g.textContent=ship.ap?'Stop autopilot':'Autopilot to '+(ship.target?ship.target.name:'…');g.setAttribute('aria-pressed',String(!!ship.ap));
  $('#sjump').textContent='Jump to '+(ship.target?ship.target.name:'…')}
 function apOn(){const b=ship.target;if(!b)return;
- if(ship.mode==='newton'){if(b===(ship.land?ship.land.b:null)){flash('You’re on '+b.name+'. Pick another target.');return}ship.hold=null;ship.ap={mode:'go',to:b,t0:performance.now(),sim0:sim};
+ if(ship.mode==='newton'){if(b===(ship.land?ship.land.b:null)){flash('You’re on '+b.name+'. Pick another target.');return}
+  // a far target with room to warp: the warp autopilot; otherwise the Newtonian one (it climbs clear and speeds time up)
+  if(ship.pos.distanceTo(b.pos)-arriveN(b)>2e5*KM&&(ship.warp.st!=='off'||!warpRoom())){ship.ap={mode:'warp',to:b,t0:performance.now()};warpOn();flash('Warp autopilot to '+b.name+'.');apUI();return}
+  ship.hold=null;ship.ap={mode:'go',to:b,t0:performance.now(),sim0:sim};
   flash('Autopilot: burn to '+b.name+' at '+gee(ship.acc)+', flip and brake, arriving at its speed. Time speeds up on the way and slows for the arrival.',8000);apUI();return}
  if(ship.pos.distanceTo(b.pos)-arriveR(b)<b.R*KM*.05){flash('You’re already at '+b.name+'. Pick another target.');return}
  ship.ap={to:b,t0:performance.now()};ship.anchor=null;flash('Autopilot: '+b.name+' at '+ship.mult+'c');apUI()}
@@ -981,6 +965,34 @@ function shipJump(){const b=ship.target;if(!b)return;jumpFX(()=>{const dv=w3.sub
  ship.pos.copy(b.pos).addScaledVector(dv,arriveR(b));m4.lookAt(ZERO,dv.clone().negate().applyAxisAngle(new V3(0,1,0),.6),new V3(0,1,0));ship.q.setFromRotationMatrix(m4);cq.copy(ship.q);
  ship.v=0;ship.thr=0;ship.ap=null;ship.anchor=b;ship.off.subVectors(ship.pos,b.pos);if(ship.mode==='newton'){ship.anchor=null;ship.land=null;ship.hold={b,off:ship.off.clone()};ship.vel.copy(b.vel||ZERO)}flash('Jumped to '+b.name+'.');apUI()})}
 
+// Warp drive (Ship mode). It needs room: not within 1.5 radii of any world. Once charged, speed is limited by gravity the way
+// SpaceEngine's warp is: a fraction of your distance to the nearest surface, so it slows you near worlds and crosses light-years
+// between stars. W and S scale it, 1 to 5 cap it (1c, 10c, 1,000c, 1 AU/s, no cap), 0 or G drops out. With a target, P warps there
+// and drops into orbit. Newtonian velocity waits while you warp and comes back matched to the world you arrive at.
+const WARP_CAP=[0,CKM*KM,10*CKM*KM,1e3*CKM*KM,AU,Infinity];
+function warpNear(){let h=Infinity,b0=null;for(const b of ALL){if(b.kind==='probe'||!b.R)continue;const d=ship.pos.distanceTo(b.pos)-b.R*KM;if(d<h){h=d;b0=b}}return [h,b0]}
+function warpRoom(){for(const b of ALL){if(b.kind==='probe'||!b.R)continue;if(ship.pos.distanceTo(b.pos)<b.R*KM*1.5)return b}return null}
+function warpOn(){const W=ship.warp;if(W.st!=='off')return true;const b=warpRoom();
+ if(b){flash('Too deep in '+b.name+'’s gravity well for warp. Climb above '+dist(b.R*.5)+' first (hold W, or P with a far target).',7000);return false}
+ Object.assign(W,{st:'spool',t:0,v:0,k:1});ship.land=null;ship.hold=null;flash('Warp drive charging…');apUI();return true}
+function warpOff(){const W=ship.warp;if(W.st==='on'||W.st==='spool'){W.st='drop';W.t=0}apUI()}
+function warpCap(i){const W=ship.warp;W.lim=WARP_CAP[i];W.k=1;if(W.st==='off'){if(!warpOn())return}
+ flash(i===5?'Warp: no limit but gravity':'Warp limited to '+['','1c','10c','1,000c','1 AU per second'][i]);document.querySelectorAll('[data-wp]').forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.wp===i)))}
+function warpStep(raw,simDt){const W=ship.warp,def=ship.def;W.t+=raw;ship.tf=0;pred.visible=false;const [h,hb]=warpNear();ship.ref=hb||ship.ref;
+ if(hb&&hb.prev&&simDt>0)ship.pos.add(w3.subVectors(hb.pos,hb.prev)); // ride along with the nearest world
+ const ap=ship.ap&&ship.ap.mode==='warp'?ship.ap:null;let rem=Infinity;fwd.set(0,0,-1).applyQuaternion(ship.q);
+ if(ap){const T=ap.to;sdir.subVectors(T.pos,ship.pos);const d=sdir.length();sdir.divideScalar(d);rem=d-arriveN(T);
+  up.set(0,1,0).applyQuaternion(ship.q);m4.lookAt(ZERO,sdir,up);tq.setFromRotationMatrix(m4);ship.q.rotateTowards(tq,raw*1.3);if(rem<=0&&W.st!=='drop'){W.st='drop';W.t=0}}
+ const cap=.8*Math.max(h,def.size*20);
+ if(W.st==='spool'){W.v=0;if(W.t>=2){W.st='on';W.t=0;flash(ap?'Warp to '+ap.to.name:'Warp. W and S set the pace, 1 to 5 cap it, G drops out.')}}
+ else if(W.st==='on'){if(!ap){if(K('KeyW'))W.k=Math.min(1,W.k*Math.exp(raw*1.2));if(K('KeyS'))W.k=Math.max(.001,W.k*Math.exp(-raw*1.8))}
+  let want=Math.min(W.lim,W.k*cap);if(ap){const aim=fwd.dot(sdir);want=aim<.995?0:Math.min(want,Math.max(rem,0)*1.5)}
+  W.v=W.v<want?W.v+(want-W.v)*Math.min(1,raw*1.6):want+(W.v-want)*Math.exp(-raw*6)}
+ else if(W.st==='drop'){W.v*=Math.exp(-raw*7);if(W.t>.8||W.v<1e-12){
+  W.st='off';W.v=0;const R=ap?ap.to:hb;ship.vel.copy((R&&R.vel)||ZERO);ship.v=0;
+  if(ap){ship.ap=null;if(R.GM&&R.kind!=='star'){apMode('circ');flash('Arrived at '+R.name+'. Entering orbit.')}else{ship.hold={b:R,off:ship.pos.clone().sub(R.pos)};flash('Arrived at '+R.name+'.')}}
+  else flash('Out of warp, moving with '+(R?R.name:'the Sun')+'.');apUI();return}}
+ let step=W.v*raw;step=Math.min(step,Math.max(0,h*.5));if(ap)step=Math.min(step,Math.max(0,rem));ship.pos.addScaledVector(fwd,step);ship.mv.copy(fwd);ship.v=W.v}
 function launch(){const def=SHIPS[+$('#shipSel').value];makeShip(def);ship.def=def;
  if(!playing)$('#play').click();
  stopTour();if(fly){focus=fly.to;fly=null}
@@ -1004,14 +1016,14 @@ function launch(){const def=SHIPS[+$('#shipSel').value];makeShip(def);ship.def=d
  if(ship.mode==='free'){ship.anchor=null;ship.fs=0;ship.v=0}
  focus=base;origin.copy(base.pos);if(orbit&&ship.mode!=="cruise"){ship.cp=ship.cpT=-.5} // in orbit, the camera starts above the ship looking down on the world below
  // every ship gets at least 1 g so it moves; the real engine rating is one tick away
- ship.rated=RATED[def.id]||9.80665;$('#l-realthr').checked=false;$('#l-realthr').parentElement.hidden=ship.rated>=9.80665;realThrust();
+ ship.rated=def.rated||9.80665;$('#l-realthr').checked=false;$('#l-realthr').parentElement.hidden=ship.rated>=9.80665;realThrust();
  shipUI(true);fmUI();setTarget(base);
  // on smaller screens the ship panel folds to its title too, so it never covers the view (click the title to open it)
  if((innerWidth<1300||innerHeight<850)&&!document.querySelector("#p-ship").classList.contains("min"))document.querySelector("#p-ship header").click();
  flash(ship.mode==='free'?def.name+' above '+base.name+'. Hold W to fly: speed follows your height, so it eases you down to the ground and races you out to the planets and stars. Arrows turn, A D strafe, + and − change the pace, P flies to any target.':ship.mode==='newton'?(orbit?def.name+' in orbit '+dist((ro-base.R*KM)/KM)+' above '+base.name+'. Hold W to burn (the engine builds up the longer you hold), arrows to turn, P to fly to any target.':def.name+' is station-keeping near '+base.name+'. Hold W to fly; P flies to the target.'):def.name+' launched near '+base.name+'. Press 4 to cruise at light speed, or hold W to throttle up. Arrow keys steer.',9000)}
 function realThrust(){const r=$('#l-realthr').checked,a=r?ship.rated:Math.max(ship.rated,9.80665);setThrust(Math.log10(a/9.80665));
  $('#nw-rated').textContent=ship.rated>=9.80665?'Rated '+gee(ship.rated)+'.':r?'Real engine, '+gee(ship.rated)+': raise the time warp to get anywhere.':'Real engine: '+gee(ship.rated)+'. Boosted to 1 g so you can fly.'}
-function exitShip(){ship.on=false;ship.ap=null;ship.land=null;ship.hold=null;pred.visible=false;updateMarkers();
+function exitShip(){ship.on=false;ship.ap=null;ship.warp.st='off';ship.warp.v=0;ship.kick=0;dust.visible=false;if(ship.def)ship.def.plumes.forEach(p=>p.visible=false);ship.land=null;ship.hold=null;pred.visible=false;updateMarkers();
  (ship.restore||[]).forEach(s=>{if($(s).classList.contains('min'))$(s+' header').click()});ship.restore=null;if(ship.cam==='cockpit')ship.cam='chase';for(const k in keys)keys[k]=false;mouse.x=mouse.y=0;if(ship.def.obj)ship.def.obj.visible=false;camera.up.set(0,1,0);camera.fov=45;camera.updateProjectionMatrix();shipUI(false);
  let best=B[0],bd=Infinity;for(const b of ALL){if(b.kind==='probe'&&!b.on)continue;const d=ship.pos.distanceTo(b.pos)-b.R*KM;if(d<bd){bd=d;best=b}}focus=best;fly=null;flyTo(best)}
 function shipUI(on){$('#launch').textContent=on?'Leave ship':'Launch';$('#ap').hidden=!on;$('#p-ship').hidden=!on;$('#hud').hidden=!on;document.body.classList.toggle('flying',on);
@@ -1120,6 +1132,7 @@ function predictOrbit(){const ref=ship.ref;pred.visible=false;if(!ship.on||ship.
   for(let s=0;s<4;s++){const xl=x.length();g.copy(x).multiplyScalar(-mu/(xl*xl*xl));u.addScaledVector(g,h*.5);x.addScaledVector(u,h);const xl2=x.length();g.copy(x).multiplyScalar(-mu/(xl2*xl2*xl2));u.addScaledVector(g,h*.5)}}
  predG.setDrawRange(0,Math.min(N+1,k+1));predA.needsUpdate=true;pred.visible=true;predM.color.setHex(look.view==='wire'?0x3dff8a:0xffc861)}
 function setFM(m){if(!ship.on){ship.mode=m;fmUI();return}if(m===ship.mode)return;
+ if(ship.warp.st!=='off'){ship.warp.st='off';ship.warp.v=0;if(ship.ap&&ship.ap.mode==='warp')ship.ap=null}
  if(ship.mode==='free'){const b=ship.fref||refBody(ship.pos);ship.v=0;ship.fs=0;ship.anchor=b;ship.off.subVectors(ship.pos,b.pos);ship.mv.set(0,0,-1).applyQuaternion(ship.q)}
  if(m==='free'){ship.ap=null;ship.land=null;ship.hold=null;ship.anchor=null;ship.v=0;ship.fs=0;ship.thr=0;pred.visible=false;ship.mode=m;fmUI();apUI();
   flash('Free flight. Hold W to fly; your speed follows your height above the nearest world. + and − change the pace.',7000);return}
@@ -1129,7 +1142,7 @@ function setFM(m){if(!ship.on){ship.mode=m;fmUI();return}if(m===ship.mode)return
   flash('Cruise flight. Press 0 to 5 for a cruise speed, P for light-speed autopilot.',7000)}
  ship.mode=m;fmUI();apUI()}
 function fmUI(){const nw=ship.mode==='newton';document.querySelectorAll('[data-fm]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fm===ship.mode)));$('#nw-opts').hidden=!nw;$('#cr-opts').hidden=ship.mode!=='cruise';
- $('#h-keys').textContent=(ship.mode==='free'?'Hold W to fly, S back, A D strafe, Space Shift up and down, arrows turn, Q E roll, + and − change the pace, X stop, P autopilot, N switch flight model, C camera':nw?'Arrows rotate, Q E roll, W S thrust, A D strafe, Space Shift up and down, X match velocity, P autopilot, O orbit, L land, N cruise mode, , and . time warp, C camera':'Arrow keys steer, Q E roll, W S throttle, 0 to 5 cruise speeds, X stop, P autopilot, J jump, N Newtonian mode, C camera')+'. Drag to orbit the camera, scroll to zoom, Home resets the camera.';
+ $('#h-keys').textContent=(ship.mode==='free'?'Hold W to fly, S back, A D strafe, Space Shift up and down, arrows turn, Q E roll, + and − change the pace, X stop, P autopilot, N switch flight model, C camera':nw?'Arrows rotate, Q E roll, W S thrust, A D strafe, Space Shift up and down, G warp drive (1 to 5 cap it, 0 drops out), X match velocity, P autopilot (warps to far targets), O orbit, L land, N free flight, , and . time warp, C camera':'Arrow keys steer, Q E roll, W S throttle, 0 to 5 cruise speeds, X stop, P autopilot, J jump, N Newtonian mode, C camera')+'. Drag to orbit the camera, scroll to zoom, Home resets the camera.';
  document.querySelectorAll('.nwrow').forEach(e=>e.hidden=!nw)}
 function setThrust(lg){ship.acc=Math.pow(10,lg)*9.80665;$('#thrust').value=lg;$('#thrv').textContent=gee(ship.acc)}
 function apMode(mode){if(!ship.on||ship.mode!=='newton')return;if(ship.ap&&ship.ap.mode===mode){apOff('Autopilot off');return}
@@ -1158,7 +1171,8 @@ function updateShip(raw,now,simDt){const NW=ship.mode==='newton',FR=ship.mode===
  else{ship.avT.multiplyScalar(1-Math.min(1,dt*6));ship.av.multiplyScalar(1-Math.min(1,dt*6))}
  if(ship.av.lengthSq()>1e-8){eul.set(ship.av.x*dt,ship.av.y*dt,ship.av.z*dt);qd.setFromEuler(eul);ship.q.multiply(qd).normalize()}
  let rem=0,ang=0;
- if(NW){
+ if(NW&&ship.warp.st!=='off')warpStep(raw,simDt||0);
+ else if(NW){
   // holding W builds the engine up smoothly, from the set thrust to about a thousand times it, so real distances stay crossable (not with realistic thrust)
   if(!ship.ap&&!$('#l-realthr').checked&&K('KeyW','Equal','NumpadAdd'))ship.boostT=(ship.boostT||0)+dt;else ship.boostT=Math.max(0,(ship.boostT||0)-dt*3);
   ship.boost=Math.pow(10,Math.min(3,Math.max(0,ship.boostT-1.2)*.75));
@@ -1206,7 +1220,7 @@ function updateShip(raw,now,simDt){const NW=ship.mode==='newton',FR=ship.mode===
   if(ship.v>0&&ship.mv.dot(w3)<0){ship.v=0;ship.thr=0;ship.ap=null;ship.anchor=b;ship.off.subVectors(ship.pos,b.pos);apUI();flash(b.kind==='star'?'Too close to '+b.name+'. Holding at the photosphere.':'Touched down on '+b.name+'.')}}}}
  origin.copy(ship.pos);
  const kms=ship.v/KM,f=kms>0?Math.min(1.4,Math.log10(1+kms)/5.5):0;
- const push=FR?ship.fs*(K('KeyS')&&!K('KeyW')?0:1):NW?Math.min(1,ship.tf*(1+Math.log10(ship.boost||1))):(K('KeyW','Equal','NumpadAdd')||ship.v<ship.thr*.98?1:0);
+ const push=ship.warp.st==='on'?1:FR?ship.fs*(K('KeyS')&&!K('KeyW')?0:1):NW?Math.min(1,ship.tf*(1+Math.log10(ship.boost||1))):(K('KeyW','Equal','NumpadAdd')||ship.v<ship.thr*.98?1:0);
  ship.kick=(ship.kick||0)+(push-(ship.kick||0))*Math.min(1,dt*(push>(ship.kick||0)?2.5:1.5));
  const fov=45+24*smst(.55,1.3,f)+8*ship.kick;if(Math.abs(fov-camera.fov)>.05){camera.fov+=(fov-camera.fov)*Math.min(1,dt*3);camera.updateProjectionMatrix()}
  if(ship.cam==='chase'){cq.slerp(ship.q,Math.min(1,dt*4.5));
@@ -1214,21 +1228,27 @@ function updateShip(raw,now,simDt){const NW=ship.mode==='newton',FR=ship.mode===
   const e=Math.min(1,dt*8);ship.cy+=(ship.cyT-ship.cy)*e;ship.cp+=(ship.cpT-ship.cp)*e;ship.chase*=Math.pow(ship.chaseT/ship.chase,e);
   const D=ship.chase*(1+.18*f+.3*ship.kick);qo.setFromEuler(eo.set(ship.cp,ship.cy,0,'YXZ')).premultiply(cq);
   camera.position.set(0,D*.12,D).applyQuaternion(qo);camera.up.set(0,1,0).applyQuaternion(qo);w3.set(0,D*.09,-D*2).applyQuaternion(qo);camera.lookAt(w3)}
- else if(ship.cam==='cockpit'){camera.position.set(0,def.size*.06,-def.size*.3).applyQuaternion(ship.q);camera.quaternion.copy(ship.q);camera.up.set(0,1,0).applyQuaternion(ship.q)}
+ else if(ship.cam==='cockpit'){const mt=def.mount||[0,0,-def.size/2e-6];camera.position.set(mt[0],mt[1],mt[2]).multiplyScalar(1e-6).applyQuaternion(ship.q);camera.quaternion.copy(ship.q);camera.up.set(0,1,0).applyQuaternion(ship.q)}
  else controls.update();
- def.obj.visible=ship.cam!=='cockpit';def.obj.quaternion.copy(ship.q);if(def.spin)def.spin.rotation.z+=dt*.06;
- if(NW){const bl=Math.log10(ship.boost||1);def.plumes.forEach(p=>{p.visible=ship.tf>.005;p.scale.set(1+bl*.15,1+bl*.15,(.35+ship.tf*1.4)*(1+bl*.6))});plumeM.opacity=.55*Math.min(1,.25+ship.tf)}
- else{const thrusting=K('KeyW','Equal','NumpadAdd')||ship.v<ship.thr*.98||!!ship.ap;def.plumes.forEach(p=>{p.visible=f>.01;p.scale.set(1,1,(.25+f)*(thrusting?1.25:.7))});plumeM.opacity=.5*Math.min(1,f*1.6)}
+ def.obj.visible=ship.cam!=='cockpit'||!!def.cockpit;if(def.cockpit)def.cockpit.visible=ship.cam==='cockpit';def.obj.quaternion.copy(ship.q);if(def.spin)def.spin.rotation.z+=dt*.06;
+ {const t=performance.now()/1000,wp=ship.warp&&ship.warp.st!=='off';
+  const thr=wp?0:NW?ship.tf:FR?ship.fs*.8:0,str=NW?Math.log10(ship.boost||1):0;def.plumes.forEach(p=>setPlume(p,thr,str,PE.value,t))}
  // dust drifting past the ship, so motion shows at any speed: at walking pace it creeps by at its true rate (the box is about 14 ship lengths),
  // faster than one box a second the rate is compressed logarithmically and the streaks lengthen
- const S=def.size*14,rate=ship.v*(NW?Math.max(1,speed,ship.warpAuto||1):1)/S,disp=rate<1?rate:1+Math.log(rate),sh=disp*2*dt,st=Math.min(.12,.015+disp*.02+.08*f*f*f),P=dustA.array,mv=ship.mv;
+ const S=def.size*14,rate=ship.v*(NW?Math.max(1,speed,ship.warpAuto||1):1)/S,disp=rate<1?rate:1+Math.log(rate),sh=disp*2*dt,st=ship.warp.st==='on'?.9:Math.min(.12,.015+disp*.02+.08*f*f*f),P=dustA.array,mv=ship.mv;
  for(let i=0;i<DN;i++){let x=dustP[i*3]-mv.x*sh,y=dustP[i*3+1]-mv.y*sh,z=dustP[i*3+2]-mv.z*sh;
   x=x>1?x-2:x<-1?x+2:x;y=y>1?y-2:y<-1?y+2:y;z=z>1?z-2:z<-1?z+2:z;dustP[i*3]=x;dustP[i*3+1]=y;dustP[i*3+2]=z;
   const o=i*6;P[o]=x*S;P[o+1]=y*S;P[o+2]=z*S;P[o+3]=(x+mv.x*st)*S;P[o+4]=(y+mv.y*st)*S;P[o+5]=(z+mv.z*st)*S}
- dustA.needsUpdate=true;dustM.opacity=.25*Math.min(1,rate*3)/(1+Math.log(Math.max(1,rate))*.6);dust.visible=rate>.005&&ship.cam!=='look'}
+ dustA.needsUpdate=true;dustM.opacity=ship.warp.st==='on'?.45:.25*Math.min(1,rate*3)/(1+Math.log(Math.max(1,rate))*.6);dustM.color.setHex(ship.warp.st==='on'?0x9ccaff:0xcfe6ff);dust.visible=rate>.005&&ship.cam!=='look'}
 function renderShip(){const def=ship.def,cd=camera.position.length();shipCam.position.copy(camera.position);shipCam.quaternion.copy(camera.quaternion);
- shipCam.near=Math.max(def.size*.004,cd*.002);shipCam.far=cd*3+def.size*120;shipCam.aspect=camera.aspect;shipCam.fov=camera.fov;shipCam.updateProjectionMatrix();
- sunL.position.copy(B[0].loc).normalize();sunL.intensity=Math.PI*1.1*Math.min(1e3,Math.pow(AU/Math.max(ship.pos.distanceTo(B[0].pos),1),2))*PE.value;shipAmb.intensity=.05*PE.value;renderer.clearDepth();renderer.render(shipScene,shipCam)}
+ shipCam.near=Math.max(def.size*.002,cd*.002);shipCam.far=cd*3+def.size*120;shipCam.aspect=camera.aspect;shipCam.fov=camera.fov;shipCam.updateProjectionMatrix();
+ const vis=sunVisible(ZERO),s=def.size;ship.sunVis=vis;
+ sunL.position.copy(B[0].loc).normalize().multiplyScalar(s*4);sunL.target.position.set(0,0,0);
+ sunL.intensity=Math.PI*1.1*Math.min(1e3,Math.pow(AU/Math.max(ship.pos.distanceTo(B[0].pos),1),2))*PE.value*vis;shipAmb.intensity=.02*PE.value;
+ if(sunL.castShadow){const c=sunL.shadow.camera;if(c.right!==s*1.1){c.left=c.bottom=-s*1.1;c.right=c.top=s*1.1;c.near=s*.5;c.far=s*8;c.updateProjectionMatrix();sunL.shadow.bias=-.0004;sunL.shadow.normalBias=s*.004}}
+ const e=Math.min(PE.value,4),t=performance.now()/1000;for(const m of glowMats)m.color.copy(m.userData.base).multiplyScalar(m.userData.k*e);
+ for(const l of def.lights){const k=l.userData.blink;l.visible=k==='strobe'?(t%1.3)<.07:k==='nav'?true:true}
+ renderer.clearDepth();renderer.render(shipScene,shipCam)}
 
 /* Sun glare: a starburst, halo and lens ghosts drawn over everything in screen space. How much of the Sun's disk is in view (any world in
    front of it, worked out like the eclipse shader) sets its strength, so it dims at a planet's limb and vanishes behind it. */
@@ -1244,12 +1264,15 @@ const glareM=(t,col)=>new THREE.MeshBasicMaterial({map:t,color:col,transparent:t
 GL.burst=new THREE.Mesh(new THREE.PlaneGeometry(2,2),glareM(glareTex(6,false),0xffffff));GL.scene.add(GL.burst);
 GL.ghosts=[[-.35,.09,0x7fb2ff],[-.75,.05,0xffd27a],[-1.25,.14,0x9cffc6],[.45,.04,0xff9a7a]].map(([f,s,c])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(2,2),glareM(glareTex(0,true),c));m.userData={f,s};GL.scene.add(m);return m});
 const gS=new THREE.Vector3(),gO=new THREE.Vector3();
+const sV=new THREE.Vector3(),sO=new THREE.Vector3();
+function sunVisible(p){const s=B[0];sV.copy(s.obj.position).sub(p);const ds=sV.length(),as=s.R*KM/ds;sV.divideScalar(ds);let vis=1;
+ for(const b of ALL){if(b===s||!b.obj||!b.obj.visible||!b.R)continue;sO.copy(b.obj.position).sub(p);const t=sO.dot(sV);if(t<=0||t>ds)continue;
+  const dO=sO.length(),ao=Math.asin(Math.min(1,b.R*KM/dO)),sep=Math.acos(Math.min(1,Math.max(-1,t/dO)));if(sep>as+ao)continue;
+  const full=Math.min(1,ao*ao/(as*as)),x=Math.min(1,Math.max(0,(sep-Math.abs(as-ao))/(as+ao-Math.abs(as-ao))));vis*=1-full*(1-x*x*(3-2*x))}
+ return vis}
 function updateGlare(){const s=B[0];GL.on=false;if(look.view!=='real'||!s.obj.visible)return;
  gS.copy(s.obj.position).sub(camera.position);const ds=gS.length(),as=s.R*KM/ds;if(ds<s.R*KM*1.5)return;gS.divideScalar(ds);
- // fraction of the Sun's disk in view: every other world, judged as overlapping disks
- let vis=1;for(const b of ALL){if(b===s||!b.obj||!b.obj.visible||!b.R)continue;gO.copy(b.obj.position).sub(camera.position);const t=gO.dot(gS);if(t<=0||t>ds)continue;
-  const dO=gO.length(),ao=Math.asin(Math.min(1,b.R*KM/dO)),sep=Math.acos(Math.min(1,Math.max(-1,gO.dot(gS)/dO)));if(sep>as+ao)continue;
-  const full=Math.min(1,ao*ao/(as*as)),x=Math.min(1,Math.max(0,(sep-Math.abs(as-ao))/(as+ao-Math.abs(as-ao))));vis*=1-full*(1-x*x*(3-2*x))}
+ let vis=sunVisible(camera.position); // fraction of the Sun's disk in view
  v3.copy(s.obj.position).project(camera);if(v3.z>1)return;const edge=Math.max(Math.abs(v3.x),Math.abs(v3.y));vis*=1-smst(1,1.35,edge);if(vis<.003)return;
  const asp=camera.aspect,au=ds/AU,I=vis*Math.min(2.5,1/Math.max(au,.2)),r=.55*Math.min(1.6,Math.pow(I,.35))*Math.max(.5,Math.min(1.4,as*120));
  GL.cam.left=-asp;GL.cam.right=asp;GL.cam.updateProjectionMatrix();const x=v3.x*asp,y=v3.y;
@@ -1262,6 +1285,8 @@ function hud(now){const t=ship.target,k=ship.v/KM,capK=CKM*ship.mult;
  if(ship.mode==='newton'){predictOrbit();const T=t||ship.ref,ap=ship.ap;
   $('#h-mode').textContent='Newtonian · '+(ship.land?'Landed on '+ship.land.b.name:ship.hold?'Station-keeping at '+ship.hold.b.name+' · W to fly':ap?{go:'Autopilot to '+(ap.to||T).name,circ:'Orbit insertion',land:'Landing',match:'Matching velocity'}[ap.mode]+(ship.warpAuto>1.5?' · time ×'+fmtX(ship.warpAuto):''):ship.tf>.005?'Thrusting'+(ship.boost>1.5?' ×'+fmtX(ship.boost):''):'Coasting');
   const kk=ship.land?0:k;$('#h-spd').innerHTML=fmtV(kk)+'<small>'+(ship.land?'on the surface of '+ship.land.b.name:'relative to '+T.name)+(kk>.01*CKM?', '+fmtC(kk):'')+'</small>';
+  {const W=ship.warp;if(W.st!=='off'){$('#h-mode').textContent=W.st==='spool'?'Warp drive charging '+Math.round(Math.min(1,W.t/2)*100)+'%':W.st==='drop'?'Dropping out of warp':(ship.ap&&ship.ap.mode==='warp'?'Warp to '+ship.ap.to.name:'Warp')+(W.lim<Infinity?' · capped':'');
+   $('#h-spd').innerHTML=fmtV(W.v/KM)+'<small>'+fmtC(W.v/KM)+'</small>'}}
   $('#thr i').style.width=(ship.tf*100).toFixed(1)+'%';$('#thr b').style.display='none';
   $('#h-setl').textContent='Engine';$('#h-set').textContent='Thrust '+gee(ship.acc)+(ship.drag>.5?' · drag '+gee(ship.drag)+(ship.drag>30&&k>3?', re-entry heating':''):'');
   {const p=pullAt(ship.pos);$('#h-g').textContent=fmtA(p.a)+', mostly '+p.top.name}
@@ -1297,6 +1322,8 @@ $('#mult').addEventListener('input',e=>{ship.mult=+e.target.value;$('#multv').te
 document.querySelectorAll('[data-cr]').forEach(b=>b.addEventListener('click',()=>{if(ship.on){if(ship.mode!=='cruise')setFM('cruise');cruise(+b.dataset.cr)}}));
 document.querySelectorAll('[data-fm]').forEach(b=>b.addEventListener('click',()=>setFM(b.dataset.fm)));
 $('#thrust').addEventListener('input',e=>{setThrust(+e.target.value);$('#l-realthr').checked=Math.abs(ship.acc/ship.rated-1)<.02});
+$('#b-warp').addEventListener('click',()=>{if(!ship.on)return;if(ship.mode!=='newton')setFM('newton');ship.warp.st==='off'?warpOn():warpOff()});
+document.querySelectorAll('[data-wp]').forEach(b=>b.addEventListener('click',()=>{if(!ship.on)return;if(ship.mode!=='newton')setFM('newton');warpCap(+b.dataset.wp)}));
 $('#b-orbit').addEventListener('click',()=>apMode('circ'));$('#b-land').addEventListener('click',()=>apMode('land'));$('#b-match').addEventListener('click',()=>apMode('match'));
 fmUI();
 $('#apGo').addEventListener('click',()=>{ship.ap?apOff('Autopilot off'):apOn()});
@@ -1305,9 +1332,11 @@ document.querySelectorAll('[data-travel]').forEach(b=>b.addEventListener('click'
 const STEER=['Space','ShiftLeft','ShiftRight','KeyM','KeyW','KeyA','KeyS','KeyD','Equal','Minus','NumpadAdd','NumpadSubtract','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyQ','KeyE','KeyR','KeyF','PageUp','PageDown'];
 function press(c){
  if(c==='Comma'||c==='Period'){const sp=$('#speed');sp.value=Math.max(ship.mode==='newton'?5:0,Math.min(10,+sp.value+(c==='Period'?1:-1)));sp.dispatchEvent(new Event('input'));return true}
- if(c==='KeyN'){setFM({free:'newton',newton:'cruise',cruise:'free'}[ship.mode]);return true}
- if(ship.mode==='free'){if(c==='KeyX'){ship.fs=0;ship.v=0;if(ship.ap)apOff('Stopped');return true}if(/^(?:Digit|Numpad)[0-5]$/.test(c))setFM('cruise')}
- if(ship.mode==='newton'){if(c==='KeyX'){keys[c]=true;if(ship.ap)apOff('Manual control');return true}if(c==='KeyO'){apMode('circ');return true}if(c==='KeyL'){apMode('land');return true}if(/^(?:Digit|Numpad)[0-5]$/.test(c))setFM('cruise')}
+ if(c==='KeyN'){setFM(ship.mode==='free'?'newton':'free');return true}
+ if(ship.mode==='free'){if(c==='KeyX'){ship.fs=0;ship.v=0;if(ship.ap)apOff('Stopped');return true}}
+ if(ship.mode==='newton'){if(c==='KeyG'){ship.warp.st==='off'?warpOn():warpOff();return true}{const m=/^(?:Digit|Numpad)([0-5])$/.exec(c);if(m){+m[1]?warpCap(+m[1]):warpOff();return true}}
+  if(ship.warp.st!=='off'&&['KeyX','KeyO','KeyL'].includes(c)){flash('Drop out of warp first (G).');return true}
+  if(c==='KeyX'){keys[c]=true;if(ship.ap)apOff('Manual control');return true}if(c==='KeyO'){apMode('circ');return true}if(c==='KeyL'){apMode('land');return true}}
  if(STEER.includes(c)){keys[c]=true;if(ship.ap&&!['KeyW','ArrowUp'].includes(c))apOff('Manual control');else if(ship.ap&&['KeyW','ArrowUp'].includes(c))apOff('Manual control');return true}
  {const m=/^(?:Digit|Numpad)([0-5])$/.exec(c);if(m){cruise(+m[1]);return true}}
  switch(c){case 'KeyX':if(ship.ap)apOff('Manual control');cruise(0);return true;case 'KeyP':ship.ap?apOff('Autopilot off'):apOn();return true;
@@ -1421,6 +1450,7 @@ function frame(now){
  for(const b of B)placeOrbit(b,ride);
  helio.visible=opt.helio&&!ship.on;helio.position.copy(B[0].loc).negate().add(B[0].loc).sub(origin);
  updateSky();updateStars();updateXC();updateLook();updateExposure(dt);updateTiles();updateMaps(now);
+ if(ship.on)env.update(now,!ship.envT);ship.envT=ship.on;
  hdr.bloomOn=opt.bloom;hdr.begin();renderer.render(scene,camera);if(ship.on)renderShip();
  updateGlare();if(GL.on){renderer.clearDepth();renderer.render(GL.scene,GL.cam)}hdr.end();updateLabels();updateMarkers();
  if(now-infoT>250){infoT=now;updateInfo();if(look.view==='gravity')updatePull();if(ship.on)hud(now);const d=new Date(sim);$('#date').textContent=isNaN(d)?'—':d.toISOString().slice(0,16).replace('T',' ')+' UTC';const yr=d.getUTCFullYear();$('#dwarn').hidden=!(yr<-3000||yr>3000)}
